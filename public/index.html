@@ -2,83 +2,98 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>PIXEL WAR 3D (DOOM Style)</title>
+    <title>PIXEL WAR 3D - DDA Engine</title>
     <style>
-        body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+        body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; user-select: none; }
         
-        /* 讓 Canvas 呈現像素風格 (Retro Look) */
+        /* 保持復古像素感 */
         canvas { 
             width: 100vw; 
             height: 100vh; 
             image-rendering: pixelated; 
         }
 
-        /* UI Overlay */
-        #ui { position: absolute; bottom: 10px; left: 10px; color: #0f0; font-size: 24px; text-shadow: 2px 2px #000; pointer-events: none;}
+        #ui { position: absolute; bottom: 20px; left: 20px; color: #0f0; font-size: 24px; text-shadow: 2px 2px #000; pointer-events: none; z-index: 5;}
+        
         #crosshair { 
-            position: absolute; top: 50%; left: 50%; width: 20px; height: 20px; 
-            transform: translate(-50%, -50%); pointer-events: none;
+            position: absolute; top: 50%; left: 50%; width: 4px; height: 4px; 
+            background: #0f0; transform: translate(-50%, -50%); pointer-events: none;
+            box-shadow: 0 0 4px #0f0;
         }
-        #crosshair::before { content: '+'; color: #0f0; font-size: 30px; }
 
-        /* Login */
+        /* 登入畫面優化 */
         #login { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #111; display: flex; align-items: center; justify-content: center; z-index: 10; }
-        .box { text-align: center; color: white; }
-        input { padding: 10px; font-size: 1.2rem; }
-        button { padding: 10px 20px; font-size: 1.2rem; cursor: pointer; background: #d32f2f; color: white; border: none; }
+        .box { text-align: center; color: white; background: #222; padding: 40px; border: 2px solid #444; border-radius: 10px; }
+        input { padding: 10px; font-size: 1.2rem; background: #000; color: #0f0; border: 1px solid #444; width: 200px; text-align: center; outline: none; }
+        button { margin-top: 20px; padding: 10px 30px; font-size: 1.2rem; cursor: pointer; background: #d32f2f; color: white; border: none; font-weight: bold; }
+        button:hover { background: #ff3333; }
+
+        .stat-label { color: #aaa; font-size: 0.8em; }
+        .stat-val { color: #fff; font-weight: bold; font-size: 1.2em; }
     </style>
 </head>
 <body>
 
     <div id="login">
         <div class="box">
-            <h1>PIXEL WAR 3D</h1>
-            <input type="text" id="username" placeholder="Enter Name">
-            <button onclick="joinGame()">ENTER BATTLE</button>
+            <h1 style="color:#d32f2f; text-shadow: 2px 2px 0 #000;">PIXEL WAR 3D</h1>
+            <p style="color:#888; font-size: 0.8rem; margin-bottom: 20px;">WASD to Move | Mouse to Aim | Click to Shoot</p>
+            <input type="text" id="username" placeholder="CODENAME" maxlength="10">
+            <br>
+            <button onclick="joinGame()">DEPLOY</button>
         </div>
     </div>
 
     <div id="crosshair"></div>
     <div id="ui">
-        HP: <span id="hp">150</span>% | KILLS: <span id="kills">0</span>
+        <span class="stat-label">HP</span> <span id="hp" class="stat-val" style="color: #0f0;">100</span>
+        <span style="margin: 0 10px; color: #444;">|</span>
+        <span class="stat-label">KILLS</span> <span id="kills" class="stat-val">0</span>
     </div>
     
-    <!-- 我們把內部解析度設低一點，這樣更有復古感，效能也更好 -->
+    <!-- 解析度設為 320x200 (VGA Mode 13h) 以獲得最佳像素風格 -->
     <canvas id="screen" width="320" height="200"></canvas>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
         const canvas = document.getElementById('screen');
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { alpha: false }); // 優化效能
 
-        // Raycasting Settings
+        // ============================
+        // 設定參數 (Config)
+        // ============================
         const SCREEN_WIDTH = 320;
         const SCREEN_HEIGHT = 200;
-        const FOV = Math.PI / 3; // 60 degrees
         const BLOCK_SIZE = 64;
-        const MAX_DEPTH = 800; // View distance
-
+        const FOV = 0.66; // 視野範圍 (約 66 度)
+        const MOUSE_SENSITIVITY = 0.005; // 靈敏度 (已調高)
+        
+        // 遊戲狀態
         let map = [];
         let myId = null;
         let players = {};
         let bullets = [];
         
-        // My State
-        let px = 100, py = 100, pAngle = 0;
+        // 本地玩家狀態 (Client-side)
+        let px = 150, py = 150; // 位置
+        let dirX = -1, dirY = 0; // 方向向量
+        let planeX = 0, planeY = 0.66; // 攝像機平面 (決定 FOV)
         
-        // Input
+        // 輸入狀態
         const keys = { w: false, a: false, s: false, d: false };
+        let isMouseDown = false;
+        let shootCooldown = 0; // 視覺上的後座力冷卻
 
         function joinGame() {
-            const name = document.getElementById('username').value;
-            if(!name) return;
+            const name = document.getElementById('username').value.trim() || "Soldier";
             document.getElementById('login').style.display = 'none';
             socket.emit('join', { username: name });
             
-            // Mouse Lock
+            // 鎖定滑鼠指標
             canvas.requestPointerLock = canvas.requestPointerLock || canvas.mozRequestPointerLock;
             canvas.onclick = () => canvas.requestPointerLock();
+            canvas.requestPointerLock();
         }
 
         socket.on('init', (data) => {
@@ -92,195 +107,376 @@
             
             if (players[myId]) {
                 const me = players[myId];
-                px = me.x;
-                py = me.y;
-                pAngle = me.angle;
-                document.getElementById('hp').innerText = me.hp;
+                // 這裡我們做一個「融合」，如果伺服器位置跟本地差太多才強制修正
+                // 這樣可以避免網路造成的移動回朔抖動
+                if (Math.hypot(me.x - px, me.y - py) > 50) {
+                    px = me.x;
+                    py = me.y;
+                }
+                
+                // 更新 UI
+                const hpElem = document.getElementById('hp');
+                hpElem.innerText = me.hp;
+                hpElem.style.color = me.hp < 50 ? 'red' : '#0f0';
                 document.getElementById('kills').innerText = me.kills;
             }
         });
 
         // ============================
-        // Raycasting Engine (The Magic)
+        // 核心繪圖引擎 (DDA Raycasting)
         // ============================
-        function draw3D() {
-            // 1. Draw Ceiling and Floor
-            ctx.fillStyle = '#333'; // Ceiling
+        function drawScene() {
+            // 1. 畫地板和天花板 (Gradient)
+            // 天花板
+            const gradSky = ctx.createLinearGradient(0, 0, 0, SCREEN_HEIGHT / 2);
+            gradSky.addColorStop(0, '#111');
+            gradSky.addColorStop(1, '#333');
+            ctx.fillStyle = gradSky;
             ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT / 2);
-            ctx.fillStyle = '#222'; // Floor
+            
+            // 地板
+            const gradFloor = ctx.createLinearGradient(0, SCREEN_HEIGHT / 2, 0, SCREEN_HEIGHT);
+            gradFloor.addColorStop(0, '#222');
+            gradFloor.addColorStop(1, '#000');
+            ctx.fillStyle = gradFloor;
             ctx.fillRect(0, SCREEN_HEIGHT / 2, SCREEN_WIDTH, SCREEN_HEIGHT / 2);
 
-            // 2. Cast Rays for Walls
-            // ZBuffer 用來處理遮擋，紀錄每個 x 軸像素的深度
+            if (map.length === 0) return;
+
+            // ZBuffer 用於後續 Sprite 遮擋判斷
             const zBuffer = new Array(SCREEN_WIDTH).fill(0);
 
+            // 2. 投射射線 (Raycasting Loop)
             for (let x = 0; x < SCREEN_WIDTH; x++) {
-                // Calculate ray angle
-                const rayAngle = (pAngle - FOV / 2.0) + (x / SCREEN_WIDTH) * FOV;
-                
-                const stepSize = 5; // Ray step precision (lower = accurate but slower)
-                let distanceToWall = 0;
-                let hitWall = false;
-                let eyeX = Math.cos(rayAngle);
-                let eyeY = Math.sin(rayAngle);
-                let testX = px;
-                let testY = py;
+                // 將 x 座標轉換為相機空間 (-1 到 1)
+                const cameraX = 2 * x / SCREEN_WIDTH - 1;
+                const rayDirX = dirX + planeX * cameraX;
+                const rayDirY = dirY + planeY * cameraX;
 
-                // DDA / Ray Marching
-                while (!hitWall && distanceToWall < MAX_DEPTH) {
-                    distanceToWall += stepSize;
-                    testX = px + eyeX * distanceToWall;
-                    testY = py + eyeY * distanceToWall;
+                // 所在的網格座標
+                let mapX = Math.floor(px / BLOCK_SIZE);
+                let mapY = Math.floor(py / BLOCK_SIZE);
 
-                    const gridX = Math.floor(testX / BLOCK_SIZE);
-                    const gridY = Math.floor(testY / BLOCK_SIZE);
+                // DDA 演算法參數
+                let sideDistX, sideDistY;
+                const deltaDistX = Math.abs(1 / rayDirX);
+                const deltaDistY = Math.abs(1 / rayDirY);
+                let perpWallDist;
+                let stepX, stepY;
+                let hit = 0;
+                let side; // 0 for NS, 1 for EW
 
-                    if (gridY < 0 || gridY >= map.length || gridX < 0 || gridX >= map[0].length) {
-                        hitWall = true;
-                        distanceToWall = MAX_DEPTH;
-                    } else if (map[gridY][gridX] === 1) {
-                        hitWall = true;
+                // 計算步長和初始側邊距離
+                if (rayDirX < 0) {
+                    stepX = -1;
+                    sideDistX = (px / BLOCK_SIZE - mapX) * deltaDistX;
+                } else {
+                    stepX = 1;
+                    sideDistX = (mapX + 1.0 - px / BLOCK_SIZE) * deltaDistX;
+                }
+                if (rayDirY < 0) {
+                    stepY = -1;
+                    sideDistY = (py / BLOCK_SIZE - mapY) * deltaDistY;
+                } else {
+                    stepY = 1;
+                    sideDistY = (mapY + 1.0 - py / BLOCK_SIZE) * deltaDistY;
+                }
+
+                // DDA 執行 (尋找牆壁)
+                while (hit === 0) {
+                    if (sideDistX < sideDistY) {
+                        sideDistX += deltaDistX;
+                        mapX += stepX;
+                        side = 0;
+                    } else {
+                        sideDistY += deltaDistY;
+                        mapY += stepY;
+                        side = 1;
+                    }
+                    
+                    // 防止超出地圖陣列報錯
+                    if (mapY < 0 || mapY >= map.length || mapX < 0 || mapX >= map[0].length) {
+                        hit = 1; 
+                        perpWallDist = 100; // 視為無窮遠
+                    } else if (map[mapY][mapX] > 0) {
+                        hit = 1;
                     }
                 }
 
-                // Fix fish-eye effect
-                const correctedDist = distanceToWall * Math.cos(rayAngle - pAngle);
-                
-                // Calculate wall height
-                const ceiling = (SCREEN_HEIGHT / 2.0) - SCREEN_HEIGHT / correctedDist * 40;
-                const floor = SCREEN_HEIGHT - ceiling;
-                const wallHeight = floor - ceiling;
+                // 計算垂直於相機平面的距離 (防止魚眼效應)
+                if (side === 0) perpWallDist = (sideDistX - deltaDistX);
+                else            perpWallDist = (sideDistY - deltaDistY);
 
-                // Draw Wall Strip
-                // Color based on distance (Fake lighting)
-                const shade = Math.max(50, 255 - distanceToWall / 3); 
-                ctx.fillStyle = `rgb(${shade}, ${shade / 2}, ${shade / 2})`; // Reddish walls
-                ctx.fillRect(x, ceiling, 1, wallHeight);
+                zBuffer[x] = perpWallDist; // 儲存深度
+
+                // 計算牆壁高度
+                const lineHeight = Math.floor(SCREEN_HEIGHT / perpWallDist);
                 
-                zBuffer[x] = distanceToWall; // Save depth
+                // 計算繪製起點和終點
+                let drawStart = -lineHeight / 2 + SCREEN_HEIGHT / 2;
+                if (drawStart < 0) drawStart = 0;
+                let drawEnd = lineHeight / 2 + SCREEN_HEIGHT / 2;
+                if (drawEnd >= SCREEN_HEIGHT) drawEnd = SCREEN_HEIGHT - 1;
+
+                // 決定牆壁顏色 (根據距離變暗 + 陰影)
+                // 距離越遠越暗 (Fog)
+                let colorVal = 255 - (perpWallDist * 15); 
+                if (colorVal < 20) colorVal = 20;
+
+                // 側面牆壁稍微暗一點，增加立體感
+                if (side === 1) colorVal = colorVal * 0.7;
+
+                ctx.fillStyle = `rgb(${colorVal}, ${colorVal/1.2}, ${colorVal/1.2})`; // 微紅的牆
+                ctx.fillRect(x, drawStart, 1, drawEnd - drawStart);
             }
 
-            // 3. Draw Sprites (Enemies & Bullets)
-            // Need to sort by distance to draw far ones first (Painter's Algorithm)
+            // 3. 繪製 Sprites (敵人 & 子彈)
+            drawSprites(zBuffer);
+
+            // 4. 繪製武器 (AK47)
+            drawWeapon();
+        }
+
+        function drawSprites(zBuffer) {
             const sprites = [];
 
-            // Add Enemies
+            // 加入敵人
             for (let id in players) {
-                if (id === myId) continue;
-                if (players[id].hp <= 0) continue;
-                sprites.push({ type: 'player', obj: players[id] });
+                if (id === myId || players[id].hp <= 0) continue;
+                sprites.push({ x: players[id].x / BLOCK_SIZE, y: players[id].y / BLOCK_SIZE, type: 'enemy', hp: players[id].hp });
             }
-            // Add Bullets
-            bullets.forEach(b => sprites.push({ type: 'bullet', obj: b }));
-
-            // Sort logic
-            sprites.forEach(s => {
-                s.dist = Math.sqrt((px - s.obj.x)**2 + (py - s.obj.y)**2);
+            // 加入子彈
+            bullets.forEach(b => {
+                sprites.push({ x: b.x / BLOCK_SIZE, y: b.y / BLOCK_SIZE, type: 'bullet' });
             });
-            sprites.sort((a, b) => b.dist - a.dist);
 
-            // Draw Sprites
-            sprites.forEach(sprite => {
-                const obj = sprite.obj;
-                
-                // Calculate relative position
-                const dx = obj.x - px;
-                const dy = obj.y - py;
+            // 根據距離排序 (由遠到近)
+            sprites.sort((a, b) => {
+                return ((px/BLOCK_SIZE - b.x)**2 + (py/BLOCK_SIZE - b.y)**2) - ((px/BLOCK_SIZE - a.x)**2 + (py/BLOCK_SIZE - a.y)**2);
+            });
 
-                // Transform sprite with the inverse camera matrix
-                // [ planeX   dirX ] -1                                       [ dirY      -dirX ]
-                // [               ]       =  1/(planeX*dirY-dirX*planeY) *   [                 ]
-                // [ planeY   dirY ]                                          [ -planeY  planeX ]
-                
-                // Simplified 2D projection math:
-                // Find angle of sprite relative to player
-                let spriteAngle = Math.atan2(dy, dx) - pAngle;
-                while (spriteAngle < -Math.PI) spriteAngle += 2 * Math.PI;
-                while (spriteAngle > Math.PI) spriteAngle -= 2 * Math.PI;
+            for(let i=0; i<sprites.length; i++) {
+                const sprite = sprites[i];
+                // 轉換為相機相對座標
+                const spriteX = sprite.x - px / BLOCK_SIZE;
+                const spriteY = sprite.y - py / BLOCK_SIZE;
 
-                // Only draw if in front
-                if (Math.abs(spriteAngle) < FOV / 1.5) {
-                    const dist = sprite.dist; // Distance
-                    const screenX = (0.5 * (spriteAngle / (FOV / 2)) + 0.5) * SCREEN_WIDTH;
-                    const spriteHeight = (SCREEN_HEIGHT / dist) * 60; // Scale factor
-                    const spriteWidth = spriteHeight / 2; // Aspect ratio
-                    const spriteTop = (SCREEN_HEIGHT - spriteHeight) / 2;
+                // 矩陣轉換 (Inverse Camera Matrix)
+                // 1.0 / (planeX * dirY - dirX * planeY)
+                const invDet = 1.0 / (planeX * dirY - dirX * planeY);
+                const transformX = invDet * (dirY * spriteX - dirX * spriteY);
+                const transformY = invDet * (-planeY * spriteX + planeX * spriteY); // 這是深度 (Z)
 
-                    if (sprite.type === 'player') {
-                        // Draw Enemy (Simple Box for now, or could be an image)
-                        ctx.fillStyle = 'blue';
-                        ctx.fillRect(screenX - spriteWidth / 2, spriteTop, spriteWidth, spriteHeight);
+                if (transformY > 0) { // 只繪製在前面的
+                    const spriteScreenX = Math.floor((SCREEN_WIDTH / 2) * (1 + transformX / transformY));
+                    const spriteHeight = Math.abs(Math.floor(SCREEN_HEIGHT / transformY)); // 利用 transformY (距離) 計算大小
+                    
+                    // 限制大小以免當機
+                    if (spriteHeight > 2000) continue;
+
+                    const spriteWidth = Math.floor(spriteHeight / 2); // 寬度是高度的一半
+                    const spriteTop = Math.floor((SCREEN_HEIGHT - spriteHeight) / 2);
+                    const spriteLeft = Math.floor(spriteScreenX - spriteWidth / 2);
+
+                    // 檢查 ZBuffer (是否被牆壁擋住)
+                    // 簡單採樣：檢查中心點是否可見
+                    if (spriteScreenX > 0 && spriteScreenX < SCREEN_WIDTH && transformY < zBuffer[spriteScreenX]) {
                         
-                        // Draw Health bar
-                        ctx.fillStyle = 'red';
-                        ctx.fillRect(screenX - spriteWidth/2, spriteTop - 5, spriteWidth, 2);
-                        ctx.fillStyle = '#0f0';
-                        ctx.fillRect(screenX - spriteWidth/2, spriteTop - 5, spriteWidth * (obj.hp/150), 2);
+                        if (sprite.type === 'enemy') {
+                            // 畫敵人 (藍色像素人)
+                            ctx.fillStyle = '#1e88e5'; // 盔甲藍
+                            ctx.fillRect(spriteLeft, spriteTop, spriteWidth, spriteHeight);
+                            
+                            // 內層細節
+                            ctx.fillStyle = '#0d47a1'; 
+                            ctx.fillRect(spriteLeft + spriteWidth*0.2, spriteTop + spriteHeight*0.2, spriteWidth*0.6, spriteHeight*0.4);
 
-                    } else if (sprite.type === 'bullet') {
-                        ctx.fillStyle = 'yellow';
-                        ctx.fillRect(screenX - 2, spriteTop + spriteHeight/2, 4, 4);
+                            // 血條
+                            const hpPercent = sprite.hp / 150;
+                            ctx.fillStyle = 'red';
+                            ctx.fillRect(spriteLeft, spriteTop - 5, spriteWidth, 3);
+                            ctx.fillStyle = '#00e676';
+                            ctx.fillRect(spriteLeft, spriteTop - 5, spriteWidth * hpPercent, 3);
+
+                        } else if (sprite.type === 'bullet') {
+                            // 畫子彈 (發光黃點)
+                            const size = Math.max(2, spriteHeight / 10);
+                            ctx.fillStyle = '#ffeb3b';
+                            ctx.beginPath();
+                            ctx.arc(spriteScreenX, spriteTop + spriteHeight/2, size, 0, Math.PI*2);
+                            ctx.fill();
+                        }
                     }
                 }
-            });
+            }
+        }
 
-            // 4. Draw Weapon (AK47)
-            // Simple pixel art drawn with rectangles
-            const gunX = SCREEN_WIDTH / 2;
-            const gunY = SCREEN_HEIGHT;
-            ctx.fillStyle = '#444'; // Gun body
-            ctx.fillRect(gunX - 10, gunY - 80, 20, 80);
-            ctx.fillStyle = '#222'; // Barrel
-            ctx.fillRect(gunX - 4, gunY - 80, 8, -20);
+        // ============================
+        // AK47 繪製函數 (優化版)
+        // ============================
+        function drawWeapon() {
+            // 計算武器晃動 (Bobbing) - 根據移動與呼吸
+            const bobX = Math.cos(Date.now() / 200) * (keys.w || keys.s ? 5 : 2);
+            const bobY = Math.sin(Date.now() / 200) * (keys.w || keys.s ? 5 : 2);
             
-            // Muzzle flash?
-            if (isMouseDown && Math.random() > 0.5) {
-                ctx.fillStyle = 'yellow';
+            // 後座力效果
+            let recoilY = 0;
+            if (shootCooldown > 0) {
+                recoilY = 15; // 射擊時槍口上揚
+                shootCooldown--;
+            }
+
+            const gunX = SCREEN_WIDTH / 2 + 60 + bobX; // 稍微偏右
+            const gunY = SCREEN_HEIGHT + bobY + recoilY; 
+            const scale = 1.2;
+
+            ctx.save();
+            ctx.translate(gunX, gunY);
+            ctx.scale(scale, scale);
+
+            // 1. 槍托 (Wood) - 梯形
+            ctx.fillStyle = '#5d4037';
+            ctx.beginPath();
+            ctx.moveTo(-40, -10);
+            ctx.lineTo(-40, 20); // 底部
+            ctx.lineTo(0, 0);    // 連接機身
+            ctx.lineTo(0, -10);
+            ctx.fill();
+
+            // 2. 彈匣 (Magazine) - 香蕉狀
+            ctx.fillStyle = '#212121'; // 黑鐵色
+            ctx.beginPath();
+            ctx.moveTo(10, 0);
+            ctx.quadraticCurveTo(20, 20, 5, 30); // 彎曲
+            ctx.lineTo(-5, 30);
+            ctx.quadraticCurveTo(10, 20, 0, 0);
+            ctx.fill();
+
+            // 3. 機身 (Body)
+            ctx.fillStyle = '#424242'; // 鐵灰色
+            ctx.fillRect(-10, -15, 60, 15);
+
+            // 4. 槍管 (Barrel)
+            ctx.fillStyle = '#212121';
+            ctx.fillRect(50, -12, 30, 4); 
+
+            // 5. 準星 (Front Sight)
+            ctx.fillRect(75, -16, 2, 4);
+
+            // 6. 護木 (Handguard - Wood)
+            ctx.fillStyle = '#5d4037';
+            ctx.fillRect(20, -10, 30, 8);
+
+            // 7. 槍口火焰 (Muzzle Flash)
+            if (shootCooldown > 2) { // 後座力剛開始時顯示
+                ctx.fillStyle = `rgba(255, 235, 59, ${Math.random()})`;
                 ctx.beginPath();
-                ctx.arc(gunX, gunY - 110, 10, 0, Math.PI*2);
+                ctx.arc(85, -10, 10 + Math.random()*10, 0, Math.PI*2);
+                ctx.fill();
+                ctx.fillStyle = `rgba(255, 255, 255, ${Math.random()})`;
+                ctx.beginPath();
+                ctx.arc(85, -10, 5, 0, Math.PI*2);
                 ctx.fill();
             }
+
+            ctx.restore();
         }
 
         // ============================
-        // Inputs
+        // 輸入與移動邏輯
         // ============================
-        let isMouseDown = false;
         
+        // 鍵盤
         window.addEventListener('keydown', e => {
-            if (e.key === 'w') keys.w = true;
-            if (e.key === 's') keys.s = true;
-            if (e.key === 'a') keys.a = true;
-            if (e.key === 'd') keys.d = true;
+            const k = e.key.toLowerCase();
+            if (keys[k] !== undefined) keys[k] = true;
         });
         window.addEventListener('keyup', e => {
-            if (e.key === 'w') keys.w = false;
-            if (e.key === 's') keys.s = false;
-            if (e.key === 'a') keys.a = false;
-            if (e.key === 'd') keys.d = false;
+            const k = e.key.toLowerCase();
+            if (keys[k] !== undefined) keys[k] = false;
         });
-        window.addEventListener('mousedown', () => {
-            isMouseDown = true;
-            socket.emit('shoot');
-        });
-        window.addEventListener('mouseup', () => isMouseDown = false);
-        
-        // Mouse Look
+
+        // 滑鼠 (轉動視角)
         document.addEventListener('mousemove', e => {
             if (document.pointerLockElement === canvas) {
-                pAngle += e.movementX * 0.002;
+                // 使用旋轉矩陣來旋轉方向向量
+                // 負號是為了讓滑鼠往右時向右轉
+                const rotSpeed = -e.movementX * MOUSE_SENSITIVITY; 
+                
+                const oldDirX = dirX;
+                dirX = dirX * Math.cos(rotSpeed) - dirY * Math.sin(rotSpeed);
+                dirY = oldDirX * Math.sin(rotSpeed) + dirY * Math.cos(rotSpeed);
+                
+                const oldPlaneX = planeX;
+                planeX = planeX * Math.cos(rotSpeed) - planeY * Math.sin(rotSpeed);
+                planeY = oldPlaneX * Math.sin(rotSpeed) + planeY * Math.cos(rotSpeed);
             }
         });
 
-        // Loop
-        function loop() {
+        // 射擊
+        window.addEventListener('mousedown', () => {
+            if (document.pointerLockElement !== canvas) return;
+            isMouseDown = true;
+            shootCooldown = 5; // 設定後座力
+            // 算出當前角度傳給 Server
+            const angle = Math.atan2(dirY, dirX);
+            socket.emit('shoot');
+        });
+
+        // 遊戲迴圈 (60 FPS)
+        function gameLoop() {
+            // 本地移動計算 (Client-side Prediction)
+            // 讓移動感覺更即時，不依賴 Server 回傳
             if (myId) {
-                socket.emit('input', { keys, angle: pAngle });
+                const moveSpeed = 4.0; // 移動速度
+                let moveStep = 0;
+                
+                // 這裡簡化計算，實際應該要跟 dirX/dirY 做向量運算
+                // 但為了配合後端 input，我們傳送按鍵
+                
+                // 簡單碰撞檢測 (Client side collision)
+                let nextPx = px;
+                let nextPy = py;
+                
+                // 前後
+                if (keys.w) {
+                    nextPx += dirX * moveSpeed;
+                    nextPy += dirY * moveSpeed;
+                }
+                if (keys.s) {
+                    nextPx -= dirX * moveSpeed;
+                    nextPy -= dirY * moveSpeed;
+                }
+                // 左右 (Strafe) - 垂直向量
+                if (keys.d) {
+                    nextPx += -dirY * moveSpeed * 0.7; // 側移稍慢
+                    nextPy += dirX * moveSpeed * 0.7;
+                }
+                if (keys.a) {
+                    nextPx -= -dirY * moveSpeed * 0.7;
+                    nextPy -= dirX * moveSpeed * 0.7;
+                }
+
+                // 檢查碰撞 (避免穿牆抖動)
+                const gridX = Math.floor(nextPx / BLOCK_SIZE);
+                const gridY = Math.floor(nextPy / BLOCK_SIZE);
+                
+                if (map[gridY] && map[gridY][gridX] === 0) {
+                    px = nextPx;
+                    py = nextPy;
+                }
+
+                // 發送給 Server
+                const angle = Math.atan2(dirY, dirX);
+                socket.emit('input', { keys, angle: angle });
             }
-            draw3D();
-            requestAnimationFrame(loop);
+
+            drawScene();
+            requestAnimationFrame(gameLoop);
         }
-        loop();
+        
+        // 啟動
+        requestAnimationFrame(gameLoop);
 
     </script>
 </body>
