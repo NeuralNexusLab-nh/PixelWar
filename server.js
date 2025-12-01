@@ -2,9 +2,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const Redis = require('ioredis');
-const bcrypt = require('bcrypt');
 const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
 const cors = require('cors');
 
 const app = express();
@@ -12,42 +10,29 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
 const PORT = process.env.PORT || 3000;
-const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+// 如果沒有 Redis URL，不會報錯，只是不存檔
+const redis = process.env.REDIS_URL ? new Redis(process.env.REDIS_URL) : null;
 
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
-app.use(express.json());
 app.use(express.static('public'));
 
 // ============================
-// 1. 地圖資料 (1=牆, 0=空)
+// 1. 地圖設定
 // ============================
 const BLOCK_SIZE = 64;
-const MAP_WIDTH = 24;
-const MAP_HEIGHT = 24;
-// 一個簡單的迷宮地圖
+// 地圖: 1=牆, 0=空
 const WORLD_MAP = [
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
   [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
   [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
   [1,0,0,1,1,1,1,0,0,0,0,0,0,0,0,1,0,1,0,1,0,0,0,1],
   [1,0,0,1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1],
   [1,0,0,1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1],
   [1,0,0,0,0,0,0,0,0,1,1,0,1,1,0,0,0,0,0,0,0,0,0,1],
   [1,0,1,1,0,0,0,0,0,1,0,0,0,1,0,0,0,0,0,0,0,0,0,1],
-  [1,0,1,1,0,0,0,0,0,1,0,0,0,1,0,0,0,0,0,0,0,0,0,1],
   [1,0,0,0,0,0,0,0,0,1,1,0,1,1,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,1,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,1,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
   [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
   [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
@@ -57,24 +42,91 @@ const PLAYERS = {};
 const BULLETS = [];
 
 // ============================
-// 2. Auth Routes (簡化版，同上)
+// 2. NPC 機器人邏輯
 // ============================
-// ... (與上一個版本相同，這裡為了節省篇幅省略 Auth 程式碼，請直接沿用上一版的 /api/auth 部分) ...
-// ... 記得把 Auth 的程式碼貼回來 ...
+const BOT_COUNT = 5;
 
-// 這裡只列出不一樣的遊戲邏輯部分
+function spawnBots() {
+    for (let i = 0; i < BOT_COUNT; i++) {
+        const botId = `bot_${i}`;
+        PLAYERS[botId] = {
+            id: botId,
+            username: `[BOT] Alpha-${i}`,
+            x: (3 + i) * BLOCK_SIZE,
+            y: (3 + i) * BLOCK_SIZE,
+            angle: Math.random() * Math.PI * 2,
+            hp: 100, // Bot 血量稍微少一點
+            kills: 0,
+            deaths: 0,
+            isBot: true,
+            moveTimer: 0,
+            targetAngle: 0
+        };
+    }
+}
+spawnBots(); // 啟動時生成
 
+function updateBots() {
+    for (const id in PLAYERS) {
+        const bot = PLAYERS[id];
+        if (!bot.isBot || bot.hp <= 0) continue;
+
+        // 1. 簡單 AI: 隨機移動
+        bot.moveTimer--;
+        if (bot.moveTimer <= 0) {
+            bot.moveTimer = Math.floor(Math.random() * 60) + 30; // 0.5 ~ 1.5秒改變一次決策
+            bot.targetAngle = Math.random() * Math.PI * 2;
+        }
+
+        // 平滑轉向
+        const diff = bot.targetAngle - bot.angle;
+        bot.angle += diff * 0.1;
+
+        // 向前移動
+        const speed = 2; // Bot 走慢一點
+        const nextX = bot.x + Math.cos(bot.angle) * speed;
+        const nextY = bot.y + Math.sin(bot.angle) * speed;
+        
+        // 簡單碰撞檢查
+        const gx = Math.floor(nextX / BLOCK_SIZE);
+        const gy = Math.floor(nextY / BLOCK_SIZE);
+        if (WORLD_MAP[gy] && WORLD_MAP[gy][gx] === 0) {
+            bot.x = nextX;
+            bot.y = nextY;
+        } else {
+            // 撞牆就反轉
+            bot.targetAngle += Math.PI;
+        }
+
+        // 2. 簡單 AI: 隨機射擊
+        if (Math.random() < 0.02) { // 2% 機率開槍
+            BULLETS.push({
+                x: bot.x,
+                y: bot.y,
+                angle: bot.angle + (Math.random()-0.5)*0.2, // 稍微不準
+                owner: id,
+                speed: 15,
+                life: 60
+            });
+        }
+    }
+}
+
+// ============================
+// 3. Socket & 遊戲迴圈
+// ============================
 io.on('connection', (socket) => {
     socket.on('join', (data) => {
         PLAYERS[socket.id] = {
             id: socket.id,
             username: data.username || "Guest",
-            x: 2 * BLOCK_SIZE, // 出生點
+            x: 2 * BLOCK_SIZE,
             y: 2 * BLOCK_SIZE,
             angle: 0,
             hp: 150,
             kills: 0,
-            deaths: 0
+            deaths: 0,
+            isBot: false
         };
         socket.emit('init', { map: WORLD_MAP, blockSize: BLOCK_SIZE, id: socket.id });
     });
@@ -83,27 +135,20 @@ io.on('connection', (socket) => {
         const p = PLAYERS[socket.id];
         if (!p || p.hp <= 0) return;
 
-        // 簡單的碰撞檢測 (Grid Collision)
+        // 更新位置與角度 (信任前端傳來的預測位置，但做基本防作弊檢查可在此加)
+        // 為了簡單流暢，這裡直接接受前端的計算結果，但前端要傳送的是 input 狀態，這裡簡化處理
+        // 由於我們改成了 Client-Prediction，前端主要傳送 keys 和 angle
+        // 這裡為了配合上一版的代碼，我們假設前端可以處理好位置同步，或是我們後端重算
+        // 這裡採用: 後端重算 (權威伺服器)
+        
+        p.angle = data.angle;
         const moveSpeed = 5;
-        const rotSpeed = 0.05;
-
-        // 旋轉 (滑鼠控制視角，這裡也接受鍵盤轉向輔助)
-        if (data.rotateLeft) p.angle -= rotSpeed;
-        if (data.rotateRight) p.angle += rotSpeed;
-        if (data.angle !== undefined) p.angle = data.angle; // 來自滑鼠的絕對角度
-
-        // 移動計算
         let dx = 0, dy = 0;
-        if (data.keys.w) {
-            dx += Math.cos(p.angle) * moveSpeed;
-            dy += Math.sin(p.angle) * moveSpeed;
-        }
-        if (data.keys.s) {
-            dx -= Math.cos(p.angle) * moveSpeed;
-            dy -= Math.sin(p.angle) * moveSpeed;
-        }
+        
+        if (data.keys.w) { dx += Math.cos(p.angle) * moveSpeed; dy += Math.sin(p.angle) * moveSpeed; }
+        if (data.keys.s) { dx -= Math.cos(p.angle) * moveSpeed; dy -= Math.sin(p.angle) * moveSpeed; }
+        // 簡單側移邏輯略過，以保持代碼簡潔
 
-        // 檢查新位置是否撞牆
         const newX = p.x + dx;
         const newY = p.y + dy;
         const gridX = Math.floor(newX / BLOCK_SIZE);
@@ -118,9 +163,6 @@ io.on('connection', (socket) => {
     socket.on('shoot', () => {
         const p = PLAYERS[socket.id];
         if (!p || p.hp <= 0) return;
-        
-        // Raycast Shooting (Hitscan) for simplicity in 3D
-        // 為了簡化，這裡做一個簡單的射線判定，或產生子彈物件
         BULLETS.push({
             x: p.x,
             y: p.y,
@@ -136,38 +178,48 @@ io.on('connection', (socket) => {
     });
 });
 
-// Game Loop
 setInterval(() => {
-    // Update Bullets
+    updateBots(); // 更新機器人
+
+    // 子彈邏輯
     for (let i = BULLETS.length - 1; i >= 0; i--) {
         const b = BULLETS[i];
         b.x += Math.cos(b.angle) * b.speed;
         b.y += Math.sin(b.angle) * b.speed;
         b.life--;
 
-        // 碰撞 (牆壁)
         const gx = Math.floor(b.x / BLOCK_SIZE);
         const gy = Math.floor(b.y / BLOCK_SIZE);
+        
+        // 撞牆
         if (!WORLD_MAP[gy] || WORLD_MAP[gy][gx] === 1 || b.life <= 0) {
             BULLETS.splice(i, 1);
             continue;
         }
 
-        // 碰撞 (玩家) - 簡單距離判定
+        // 撞人 (玩家 & Bot)
         for (let id in PLAYERS) {
             const p = PLAYERS[id];
             if (id !== b.owner && p.hp > 0) {
                 const dist = Math.hypot(p.x - b.x, p.y - b.y);
-                if (dist < 30) { // Hit radius
+                if (dist < 30) {
                     p.hp -= 12;
                     BULLETS.splice(i, 1);
+                    
                     if (p.hp <= 0) {
-                        // Handle Kill (Redis logic here)
-                        // ...
-                        // Respawn
-                        p.hp = 150;
-                        p.x = 2 * BLOCK_SIZE;
-                        p.y = 2 * BLOCK_SIZE;
+                        // 擊殺邏輯
+                        const killer = PLAYERS[b.owner];
+                        if (killer) killer.kills++;
+                        p.deaths++;
+                        
+                        // 重生
+                        setTimeout(() => {
+                            if (PLAYERS[id]) {
+                                PLAYERS[id].hp = p.isBot ? 100 : 150;
+                                PLAYERS[id].x = (Math.random() * 10 + 2) * BLOCK_SIZE;
+                                PLAYERS[id].y = (Math.random() * 10 + 2) * BLOCK_SIZE;
+                            }
+                        }, 3000);
                     }
                     break;
                 }
@@ -177,6 +229,4 @@ setInterval(() => {
     io.emit('state', { players: PLAYERS, bullets: BULLETS });
 }, 1000 / 60);
 
-server.listen(PORT, () => {
-    console.log(`FPS Server running on port ${PORT}`);
-});
+server.listen(PORT, () => console.log(`Server running on ${PORT}`));
