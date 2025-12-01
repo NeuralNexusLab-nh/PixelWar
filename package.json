@@ -1,14 +1,13 @@
 {
-  "name": "pixel-war-3d",
+  "name": "pixel-war-fps",
   "version": "1.0.0",
-  "description": "Multiplayer Pseudo-3D Shooter with Redis Auth",
+  "description": "Retro Raycasting FPS with Redis",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
-    "body-parser": "^1.20.2",
     "cors": "^2.8.5",
     "express": "^4.18.2",
     "express-rate-limit": "^6.9.0",
