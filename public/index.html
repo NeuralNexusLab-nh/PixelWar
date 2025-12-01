@@ -158,4 +158,131 @@
                 if (transformY > 0) {
                     const spriteScreenX = Math.floor((SCREEN_WIDTH / 2) * (1 + transformX / transformY));
                     const spriteHeight = Math.abs(Math.floor(SCREEN_HEIGHT / transformY));
-                    const spriteWi
+                    const spriteWidth = spriteHeight / 2;
+                    const spriteTop = (SCREEN_HEIGHT - spriteHeight) / 2;
+                    const spriteLeft = spriteScreenX - spriteWidth / 2;
+
+                    if (transformY < zBuffer[spriteScreenX]) {
+                        // 繪製敵人身體
+                        ctx.fillStyle = sprite.isBot ? '#d32f2f' : '#2196f3'; // Bot=紅, Player=藍
+                        ctx.fillRect(spriteLeft, spriteTop, spriteWidth, spriteHeight);
+                        // 眼睛 (判斷方向略難，先畫死)
+                        ctx.fillStyle = '#fff';
+                        ctx.fillRect(spriteLeft + spriteWidth*0.2, spriteTop + spriteHeight*0.2, spriteWidth*0.2, spriteHeight*0.1);
+                        ctx.fillRect(spriteLeft + spriteWidth*0.6, spriteTop + spriteHeight*0.2, spriteWidth*0.2, spriteHeight*0.1);
+                    }
+                }
+            });
+
+            // 3. 畫槍 (3D 透視感)
+            drawGun3D();
+        }
+
+        function drawGun3D() {
+            // 計算晃動 (Bobbing)
+            let isMoving = keys.w || keys.s || keys.a || keys.d;
+            if (isMoving) walkWobble += 0.15;
+            else walkWobble = 0;
+
+            // Figure-8 晃動軌跡
+            const bobX = Math.cos(walkWobble) * 6; 
+            const bobY = Math.abs(Math.sin(walkWobble)) * 6;
+
+            // 後座力
+            let recoil = 0;
+            if (shootCooldown > 0) {
+                recoil = 20; // 槍往後縮
+                shootCooldown--;
+            }
+
+            // 槍的位置 (右下角延伸到中間)
+            // 我們把槍托放在右下，槍管指向準心
+            const centerX = SCREEN_WIDTH / 2;
+            const gunBaseX = SCREEN_WIDTH * 0.7 + bobX; // 槍托位置 (偏右)
+            const gunBaseY = SCREEN_HEIGHT + bobY + recoil; // 槍托底部
+
+            ctx.save();
+            
+            // 1. 槍身 (Body) - 梯形透視
+            // 從底部寬，延伸到中間窄
+            ctx.fillStyle = '#3e2723'; // 深木頭色
+            ctx.beginPath();
+            ctx.moveTo(gunBaseX - 60, gunBaseY); // 底部左
+            ctx.lineTo(gunBaseX + 60, gunBaseY); // 底部右
+            ctx.lineTo(centerX + 10, SCREEN_HEIGHT / 2 + 60); // 頂部右 (靠近準心)
+            ctx.lineTo(centerX - 10, SCREEN_HEIGHT / 2 + 60); // 頂部左
+            ctx.fill();
+
+            // 2. 槍管/金屬部分 (Metal Top)
+            ctx.fillStyle = '#212121'; // 黑鐵色
+            ctx.beginPath();
+            ctx.moveTo(gunBaseX - 30, gunBaseY - 20); 
+            ctx.lineTo(gunBaseX + 30, gunBaseY - 20);
+            ctx.lineTo(centerX + 5, SCREEN_HEIGHT / 2 + 60);
+            ctx.lineTo(centerX - 5, SCREEN_HEIGHT / 2 + 60);
+            ctx.fill();
+
+            // 3. 彈匣 (Magazine) - 在槍身左側畫一個斜塊
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.moveTo(gunBaseX - 30, gunBaseY - 50);
+            ctx.lineTo(gunBaseX - 60, gunBaseY - 20);
+            ctx.lineTo(gunBaseX - 50, gunBaseY - 100);
+            ctx.fill();
+
+            // 4. 槍口火焰 (Muzzle Flash)
+            if (shootCooldown > 2) {
+                ctx.fillStyle = `rgba(255, 235, 59, ${Math.random()})`;
+                ctx.beginPath();
+                // 火焰在準心下方一點點
+                ctx.arc(centerX, SCREEN_HEIGHT / 2 + 50, 10 + Math.random() * 20, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // 核心白光
+                ctx.fillStyle = '#fff';
+                ctx.beginPath();
+                ctx.arc(centerX, SCREEN_HEIGHT / 2 + 50, 5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            ctx.restore();
+        }
+
+        // 輸入邏輯
+        window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+        window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+        window.addEventListener('mousedown', () => {
+            if (document.pointerLockElement === canvas) {
+                socket.emit('shoot');
+                shootCooldown = 6;
+            }
+        });
+        document.addEventListener('mousemove', e => {
+            if (document.pointerLockElement === canvas) {
+                const sensitivity = 0.003;
+                const rot = -e.movementX * sensitivity;
+                const oldDirX = dirX;
+                dirX = dirX * Math.cos(rot) - dirY * Math.sin(rot);
+                dirY = oldDirX * Math.sin(rot) + dirY * Math.cos(rot);
+                const oldPlaneX = planeX;
+                planeX = planeX * Math.cos(rot) - planeY * Math.sin(rot);
+                planeY = oldPlaneX * Math.sin(rot) + planeY * Math.cos(rot);
+            }
+        });
+
+        function loop() {
+            if (myId) {
+                const moveSpeed = 0.1; 
+                let dx = 0, dy = 0;
+                // 客戶端簡單移動 (不傳給 server，只更新本地顯示，實際以 server 判定為主)
+                if (keys.w) { px += dirX * moveSpeed; py += dirY * moveSpeed; } // 這裡只是示意，實際移動需傳給 server
+                socket.emit('input', { keys, angle: Math.atan2(dirY, dirX) });
+            }
+            drawScene();
+            requestAnimationFrame(loop);
+        }
+        requestAnimationFrame(loop);
+
+    </script>
+</body>
+</html>
