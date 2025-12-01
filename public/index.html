@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>PIXEL WAR - AK47 Edition</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #111; color: #eee; font-family: 'Segoe UI', sans-serif; }
+        
+        /* UI Overlay */
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; padding: 20px; box-sizing: border-box; }
+        
+        /* Login Screen */
+        #login-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: flex; align-items: center; justify-content: center; z-index: 10; pointer-events: auto; }
+        .box { background: #222; padding: 30px; border-radius: 8px; border: 1px solid #444; text-align: center; width: 300px; }
+        input { width: 100%; padding: 10px; margin: 10px 0; background: #333; border: 1px solid #555; color: white; border-radius: 4px; }
+        button { width: 100%; padding: 10px; background: #d32f2f; color: white; border: none; cursor: pointer; font-weight: bold; border-radius: 4px; transition: 0.2s; }
+        button:hover { background: #b71c1c; }
+        .toggle-btn { background: transparent; color: #aaa; margin-top: 10px; font-size: 0.9em; text-decoration: underline; }
+
+        /* HUD */
+        #hud-stats { text-align: left; }
+        #hud-weapon { text-align: right; }
+        .bar-container { width: 200px; height: 20px; background: #444; border: 2px solid #000; margin-top: 5px; position: relative; }
+        .hp-bar { width: 100%; height: 100%; background: #d32f2f; transition: width 0.1s; }
+        .ammo-text { font-size: 2rem; font-weight: bold; color: #ffd700; }
+        .kill-feed { position: absolute; top: 20px; right: 20px; text-align: right; font-size: 0.9rem; color: #fff; }
+
+        .hidden { display: none !important; }
+        .reloading { color: #f44336; animation: blink 0.5s infinite; }
+        @keyframes blink { 50% { opacity: 0.5; } }
+    </style>
+</head>
+<body>
+
+<!-- Login / Register -->
+<div id="login-screen">
+    <div class="box">
+        <h1 style="color: #d32f2f;">PIXEL WAR</h1>
+        <div id="form-error" style="color: red; font-size: 0.8rem; margin-bottom: 10px;"></div>
+        
+        <input type="text" id="username" placeholder="Username (min 3 chars)">
+        <input type="password" id="password" placeholder="Password (min 6 chars)">
+        
+        <button id="btn-action" onclick="submitAuth()">LOGIN</button>
+        <button class="toggle-btn" onclick="toggleMode()">Create Account</button>
+    </div>
+</div>
+
+<!-- Game HUD -->
+<div id="ui-layer" class="hidden">
+    <div id="hud-stats">
+        <h2 id="hud-name">Player</h2>
+        <div>Kills: <span id="hud-kills">0</span> | Deaths: <span id="hud-deaths">0</span></div>
+        <div class="bar-container">
+            <div id="hp-bar" class="hp-bar"></div>
+        </div>
+    </div>
+    
+    <div id="hud-weapon">
+        <div class="ammo-text">AK-47 <span id="ammo-count">20</span>/20</div>
+        <div id="reload-msg" class="hidden reloading">RELOADING...</div>
+    </div>
+    
+    <div id="kill-feed-container" class="kill-feed"></div>
+</div>
+
+<canvas id="gameCanvas"></canvas>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+    const socket = io();
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // State
+    let myId = null;
+    let myUsername = null;
+    let players = {};
+    let bullets = [];
+    let obstacles = [];
+    let mapSize = 2000;
+    
+    // Inputs
+    const keys = { w: false, a: false, s: false, d: false };
+    let mouseAngle = 0;
+    let isMouseDown = false;
+    let isAuthModeLogin = true;
+
+    // Viewport (Camera)
+    const camera = { x: 0, y: 0 };
+
+    // ============================
+    // Auth Logic
+    // ============================
+    function toggleMode() {
+        isAuthModeLogin = !isAuthModeLogin;
+        document.getElementById('btn-action').innerText = isAuthModeLogin ? "LOGIN" : "REGISTER";
+        document.getElementById('form-error').innerText = "";
+    }
+
+    async function submitAuth() {
+        const u = document.getElementById('username').value;
+        const p = document.getElementById('password').value;
+        const errorDiv = document.getElementById('form-error');
+        const endpoint = isAuthModeLogin ? '/api/auth/login' : '/api/auth/register';
+
+        try {
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: u, password: p })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                if (!isAuthModeLogin) {
+                    alert("Account created! Please login.");
+                    toggleMode();
+                    return;
+                }
+                
+                // Login Success
+                document.getElementById('login-screen').classList.add('hidden');
+                document.getElementById('ui-layer').classList.remove('hidden');
+                myUsername = data.username;
+                
+                // Join Game
+                socket.emit('join', { username: myUsername });
+            } else {
+                errorDiv.innerText = data.error;
+            }
+        } catch (e) {
+            errorDiv.innerText = "Connection error.";
+        }
+    }
+
+    // ============================
+    // Game Events
+    // ============================
+    socket.on('init', (data) => {
+        myId = data.id;
+        mapSize = data.mapSize;
+        obstacles = data.obstacles;
+        resize();
+    });
+
+    socket.on('state', (data) => {
+        players = data.players;
+        bullets = data.bullets;
+        
+        // Update HUD
+        const me = players[myId];
+        if (me) {
+            document.getElementById('hud-name').innerText = me.username;
+            document.getElementById('hud-kills').innerText = me.totalKills || 0;
+            document.getElementById('hud-deaths').innerText = me.totalDeaths || 0;
+            document.getElementById('ammo-count').innerText = me.ammo;
+            
+            const hpPercent = Math.max(0, (me.hp / 150) * 100);
+            document.getElementById('hp-bar').style.width = hpPercent + '%';
+
+            // Camera follow
+            camera.x = me.x - canvas.width / 2;
+            camera.y = me.y - canvas.height / 2;
+        }
+    });
+
+    socket.on('reloading', (isReloading) => {
+        const msg = document.getElementById('reload-msg');
+        if (isReloading) msg.classList.remove('hidden');
+        else msg.classList.add('hidden');
+    });
+
+    socket.on('killfeed', (data) => {
+        const feed = document.getElementById('kill-feed-container');
+        const item = document.createElement('div');
+        item.innerHTML = `<span style="color:#d32f2f">${data.killer}</span> 🔫 ${data.victim}`;
+        feed.appendChild(item);
+        setTimeout(() => item.remove(), 5000);
+    });
+
+    // ============================
+    // Rendering (Pseudo 3D)
+    // ============================
+    function draw() {
+        // Clear background
+        ctx.fillStyle = '#1a1a1a'; // Dark floor
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Draw Grid
+        ctx.save();
+        ctx.translate(-camera.x, -camera.y);
+        
+        ctx.strokeStyle = '#2a2a2a';
+        ctx.lineWidth = 2;
+        for (let x = 0; x <= mapSize; x += 100) {
+            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, mapSize); ctx.stroke();
+        }
+        for (let y = 0; y <= mapSize; y += 100) {
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(mapSize, y); ctx.stroke();
+        }
+
+        // Draw Obstacles (Walls with 3D effect)
+        obstacles.forEach(obs => {
+            // Draw Side (Fake Height)
+            ctx.fillStyle = '#0d0d0d'; // Darker side
+            ctx.fillRect(obs.x, obs.y + obs.h, obs.w, 20); // Front face projection
+            
+            // Draw Top
+            ctx.fillStyle = '#444';
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+            ctx.strokeRect(obs.x, obs.y, obs.w, obs.h);
+        });
+
+        // Draw Bullets
+        ctx.fillStyle = '#ffd700';
+        bullets.forEach(b => {
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, 4, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        // Draw Players
+        for (let id in players) {
+            const p = players[id];
+            if (p.hp <= 0) continue; // Don't draw dead
+
+            // Draw Body
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            ctx.rotate(p.angle);
+
+            // Legs/Shadow
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.beginPath(); ctx.arc(0, 0, 25, 0, Math.PI * 2); ctx.fill();
+
+            // Shoulders/Head
+            ctx.fillStyle = (id === myId) ? '#2196f3' : '#f44336'; // Blue for me, Red for enemy
+            ctx.beginPath(); ctx.arc(0, 0, 20, 0, Math.PI * 2); ctx.fill();
+            
+            // AK47 Weapon
+            ctx.fillStyle = '#5d4037'; // Wood color
+            ctx.fillRect(10, 5, 30, 8); // Gun barrel
+            ctx.fillStyle = '#000';
+            ctx.fillRect(10, 2, 10, 14); // Gun stock
+
+            ctx.restore();
+
+            // Name Tag & HP (Floating above)
+            ctx.fillStyle = 'white';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(p.username, p.x, p.y - 35);
+            
+            // HP Bar above head
+            ctx.fillStyle = 'red';
+            ctx.fillRect(p.x - 20, p.y - 30, 40, 5);
+            ctx.fillStyle = '#00e676';
+            ctx.fillRect(p.x - 20, p.y - 30, 40 * (p.hp / 150), 5);
+        }
+
+        ctx.restore();
+        requestAnimationFrame(draw);
+    }
+
+    // ============================
+    // Input Listeners
+    // ============================
+    function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'w') keys.w = true;
+        if (e.key === 'a') keys.a = true;
+        if (e.key === 's') keys.s = true;
+        if (e.key === 'd') keys.d = true;
+        if (e.key === 'r') socket.emit('reload');
+    });
+
+    window.addEventListener('keyup', (e) => {
+        if (e.key === 'w') keys.w = false;
+        if (e.key === 'a') keys.a = false;
+        if (e.key === 's') keys.s = false;
+        if (e.key === 'd') keys.d = false;
+    });
+
+    window.addEventListener('mousemove', (e) => {
+        if (myId && players[myId]) {
+            // Calculate angle relative to center of screen (where player is)
+            const dx = e.clientX - canvas.width / 2;
+            const dy = e.clientY - canvas.height / 2;
+            mouseAngle = Math.atan2(dy, dx);
+        }
+    });
+
+    window.addEventListener('mousedown', () => { isMouseDown = true; });
+    window.addEventListener('mouseup', () => { isMouseDown = false; });
+
+    // Input Loop (Send to server)
+    setInterval(() => {
+        if (myId) {
+            socket.emit('input', { keys, angle: mouseAngle });
+            if (isMouseDown) socket.emit('shoot');
+        }
+    }, 1000 / 60);
+
+    // Start Rendering
+    draw();
+</script>
+</body>
+</html>
