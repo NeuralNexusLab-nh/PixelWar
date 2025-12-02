@@ -5,73 +5,45 @@
     <title>Pixel War</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
-
         body { margin: 0; background: #000; overflow: hidden; font-family: 'Press Start 2P', cursive; user-select: none; }
         canvas { width: 100vw; height: 100vh; image-rendering: pixelated; display: block; }
-
-        /* Common Styles */
         .hidden { display: none !important; }
-        .pixel-font { font-family: 'Press Start 2P', cursive; }
         .red-text { color: #d32f2f; text-shadow: 2px 2px #000; }
-        .btn { 
-            background: #d32f2f; border: 4px solid #fff; color: white; 
-            padding: 15px 20px; font-family: 'Press Start 2P'; cursor: pointer; 
-            margin: 10px; font-size: 1rem; text-transform: uppercase;
-        }
+        .btn { background: #d32f2f; border: 4px solid #fff; color: white; padding: 15px; font-family: 'Press Start 2P'; cursor: pointer; margin: 10px; font-size: 1rem; text-transform: uppercase; }
         .btn:hover { background: #ff5252; transform: scale(1.05); }
 
-        /* Screens */
-        #login-screen, #pause-menu, #death-screen { 
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
-            background: rgba(0,0,0,0.9); display: flex; flex-direction: column; 
-            align-items: center; justify-content: center; z-index: 50; 
-        }
-
-        /* Login */
+        #login-screen, #pause-menu, #death-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 50; }
         .box { border: 4px solid #fff; padding: 40px; background: #222; text-align: center; max-width: 400px; }
         input { background: #000; color: #0f0; border: 2px solid #fff; padding: 10px; font-family: 'Press Start 2P'; margin-bottom: 10px; width: 80%; text-align: center; }
         .link { font-size: 0.6rem; color: #aaa; cursor: pointer; margin-top: 15px; text-decoration: underline; }
 
-        /* HUD */
         #hud { position: absolute; width: 100%; height: 100%; pointer-events: none; z-index: 10; display: none; }
         .hud-top-left { position: absolute; top: 20px; left: 20px; color: #fff; font-size: 20px; cursor: pointer; pointer-events: auto; }
         .hud-top-right { position: absolute; top: 20px; right: 20px; text-align: right; color: #0f0; font-size: 0.8rem; line-height: 1.5; }
         .hud-bottom-left { position: absolute; bottom: 20px; left: 20px; color: #fff; font-size: 1.2rem; }
         .hud-bottom-right { position: absolute; bottom: 20px; right: 20px; display: flex; align-items: center; color: #ffeb3b; font-size: 1.5rem; }
         .ammo-icon { width: 30px; height: 30px; background: #ffeb3b; margin-right: 10px; clip-path: polygon(20% 0%, 80% 0%, 100% 100%, 0% 100%); }
+        #crosshair { position: absolute; top: 50%; left: 50%; width: 4px; height: 4px; background: #0f0; transform: translate(-50%, -50%); pointer-events: none; box-shadow: 0 0 5px #0f0; }
 
-        #crosshair { 
-            position: absolute; top: 50%; left: 50%; width: 4px; height: 4px; 
-            background: #0f0; transform: translate(-50%, -50%); pointer-events: none;
-            box-shadow: 0 0 5px #0f0;
-        }
-
-        /* Menu Tables */
         table { color: white; width: 100%; font-size: 0.8rem; margin-top: 20px; border-collapse: collapse; }
         td, th { border: 2px solid #555; padding: 10px; text-align: center; cursor: pointer; }
         tr:hover { background: #333; }
         .active-server { background: #d32f2f; }
-
-        /* Logo */
         .logo { font-size: 3rem; margin-bottom: 20px; text-transform: uppercase; animation: pulse 2s infinite; }
         @keyframes pulse { 0% { text-shadow: 4px 4px #d32f2f; } 50% { text-shadow: 4px 4px #fff; } 100% { text-shadow: 4px 4px #d32f2f; } }
     </style>
 </head>
 <body>
-
-    <!-- LOGIN SCREEN -->
     <div id="login-screen">
         <h1 class="logo red-text">Pixel War</h1>
         <div class="box">
             <p id="auth-msg" style="font-size: 0.7rem; color: #aaa; margin-bottom: 10px;">ENTER CREDENTIALS</p>
-            <input type="text" id="username" placeholder="USERNAME" maxlength="12">
+            <input type="text" id="username" placeholder="USERNAME" maxlength="20">
             <input type="password" id="password" placeholder="PASSWORD">
             <button class="btn" onclick="submitAuth()">PLAY</button>
             <div class="link" onclick="toggleAuthMode()" id="auth-toggle-text">Need an account? Click here to sign up!</div>
         </div>
     </div>
-
-    <!-- PAUSE MENU -->
     <div id="pause-menu" class="hidden">
         <h1 class="logo red-text">Pixel War</h1>
         <div class="box" style="width: 500px; max-width: 90%;">
@@ -81,154 +53,70 @@
                 Ping: <span id="menu-ping">0</span> ms<br>
                 FPS:  <span id="menu-fps">60</span>
             </div>
-            
             <h3 style="color: #fff; font-size: 1rem; margin-top: 20px;">SERVER BROWSER</h3>
-            <table id="server-list">
-                <!-- Server list populated via JS -->
-            </table>
-
+            <table id="server-list"></table>
             <button class="btn" style="margin-top: 30px;" onclick="resumeGame()">RESUME</button>
             <button class="btn" style="background: #333;" onclick="logout()">LOGOUT</button>
         </div>
     </div>
-
-    <!-- DEATH SCREEN -->
     <div id="death-screen" class="hidden">
         <h1 class="logo red-text" style="color: red;">YOU DEAD!</h1>
         <p style="color: white; margin-bottom: 20px;">Killed by <span id="killer-name" style="color: yellow;">Unknown</span></p>
         <button class="btn" onclick="requestRespawn()">RESPAWN</button>
     </div>
-
-    <!-- HUD -->
     <div id="hud">
-        <div class="hud-top-left" onclick="togglePause()">
-            <div style="width:30px; height:5px; background:white; margin:6px 0;"></div>
-            <div style="width:30px; height:5px; background:white; margin:6px 0;"></div>
-            <div style="width:30px; height:5px; background:white; margin:6px 0;"></div>
-        </div>
-        <div class="hud-top-right">
-            FPS: <span id="hud-fps">0</span><br>
-            PING: <span id="hud-ping">0</span>
-        </div>
-        <div class="hud-bottom-left">
-            HP <span id="hud-hp" style="color: #0f0;">100</span><br>
-            <span style="font-size: 0.8rem; color: #aaa;">KILLS: <span id="hud-kills">0</span></span>
-        </div>
-        <div class="hud-bottom-right">
-            <div class="ammo-icon"></div>
-            <span id="hud-ammo">30</span>
-        </div>
+        <div class="hud-top-left" onclick="togglePause()"><div style="width:30px; height:5px; background:white; margin:6px 0;"></div><div style="width:30px; height:5px; background:white; margin:6px 0;"></div><div style="width:30px; height:5px; background:white; margin:6px 0;"></div></div>
+        <div class="hud-top-right">FPS: <span id="hud-fps">0</span><br>PING: <span id="hud-ping">0</span> ms</div>
+        <div class="hud-bottom-left">HP <span id="hud-hp" style="color: #0f0;">100</span><br><span style="font-size: 0.8rem; color: #aaa;">KILLS: <span id="hud-kills">0</span></span></div>
+        <div class="hud-bottom-right"><div class="ammo-icon"></div><span id="hud-ammo">30</span></div>
         <div id="crosshair"></div>
     </div>
-
     <canvas id="screen" width="320" height="200"></canvas>
-
     <script src="/socket.io/socket.io.js"></script>
     <script>
-        // ============================
-        // AUDIO SYSTEM
-        // ============================
         class SoundManager {
-            constructor() {
-                this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-            }
+            constructor() { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); }
             playShoot() {
                 if (this.ctx.state === 'suspended') this.ctx.resume();
-                const osc = this.ctx.createOscillator();
-                const gain = this.ctx.createGain();
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(800, this.ctx.currentTime);
+                const osc = this.ctx.createOscillator(); const gain = this.ctx.createGain();
+                osc.type = 'sawtooth'; osc.frequency.setValueAtTime(800, this.ctx.currentTime);
                 osc.frequency.exponentialRampToValueAtTime(100, this.ctx.currentTime + 0.1);
-                gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
-                osc.connect(gain);
-                gain.connect(this.ctx.destination);
-                osc.start();
-                osc.stop(this.ctx.currentTime + 0.15);
+                gain.gain.setValueAtTime(0.2, this.ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+                osc.connect(gain); gain.connect(this.ctx.destination); osc.start(); osc.stop(this.ctx.currentTime + 0.15);
             }
             playReload() {
                 if (this.ctx.state === 'suspended') this.ctx.resume();
                 const playNoise = (time, duration) => {
-                    const bufferSize = this.ctx.sampleRate * duration;
-                    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-                    const data = buffer.getChannelData(0);
-                    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
-                    const noise = this.ctx.createBufferSource();
-                    noise.buffer = buffer;
-                    const gain = this.ctx.createGain();
-                    gain.gain.value = 0.1;
-                    noise.connect(gain);
-                    gain.connect(this.ctx.destination);
-                    noise.start(time);
+                    const buf = this.ctx.createBuffer(1, this.ctx.sampleRate * duration, this.ctx.sampleRate);
+                    const d = buf.getChannelData(0); for(let i=0; i<d.length; i++) d[i] = Math.random()*2-1;
+                    const src = this.ctx.createBufferSource(); src.buffer = buf;
+                    const g = this.ctx.createGain(); g.gain.value = 0.1;
+                    src.connect(g); g.connect(this.ctx.destination); src.start(time);
                 };
-                const playClick = (time) => {
-                    const osc = this.ctx.createOscillator();
-                    const gain = this.ctx.createGain();
-                    osc.frequency.setValueAtTime(1200, time);
-                    gain.gain.setValueAtTime(0.1, time);
-                    gain.gain.exponentialRampToValueAtTime(0.01, time + 0.05);
-                    osc.connect(gain);
-                    gain.connect(this.ctx.destination);
-                    osc.start(time);
-                    osc.stop(time + 0.05);
-                }
-                playNoise(this.ctx.currentTime, 0.2); 
-                playNoise(this.ctx.currentTime + 2.0, 0.2); 
-                playClick(this.ctx.currentTime + 2.3); 
+                playNoise(this.ctx.currentTime, 0.2); playNoise(this.ctx.currentTime+2.0, 0.2);
+                const osc = this.ctx.createOscillator(); const gain = this.ctx.createGain();
+                osc.frequency.setValueAtTime(1200, this.ctx.currentTime+2.3); gain.gain.setValueAtTime(0.1, this.ctx.currentTime+2.3);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime+2.35);
+                osc.connect(gain); gain.connect(this.ctx.destination); osc.start(this.ctx.currentTime+2.3); osc.stop(this.ctx.currentTime+2.35);
             }
         }
         const audio = new SoundManager();
 
-        // ============================
-        // GAME STATE
-        // ============================
-        const socket = io({
-            query: { server: new URLSearchParams(window.location.search).get('server') || 'server' }
-        });
-        
+        // ** Default Server Fix **
+        const currentServer = new URLSearchParams(window.location.search).get('server') || 'server';
+        // If query is missing, we could rewrite URL, but here we just connect to 'server'
+        if (!new URLSearchParams(window.location.search).get('server')) {
+             window.history.replaceState(null, null, "?server=server");
+        }
+
+        const socket = io({ query: { server: currentServer } });
         const canvas = document.getElementById('screen');
         const ctx = canvas.getContext('2d', { alpha: false });
-
-        const SCREEN_WIDTH = 320;
-        const SCREEN_HEIGHT = 200;
-        const BLOCK_SIZE = 64;
-        const FOV = 0.7; 
-        
-        let map = [];
-        let myId = null;
-        let players = {};
-        let bots = [];
-        let bullets = [];
-        
-        let px = 150, py = 150;
-        let dirX = -1, dirY = 0;
-        let planeX = 0, planeY = 0.7;
-        let isDead = false;
-        
-        const keys = { w: false, a: false, s: false, d: false };
-        let mouseState = { left: false, right: false };
-        
-        let ammo = 30;
-        let isReloading = false;
-        let isADS = false; 
-        let shootTimer = 0; 
-        let recoil = 0;
-        let walkWobble = 0;
-        let adsFactor = 0; 
-        let reloadAnim = 0; 
-
-        let lastTime = performance.now();
-        let fps = 60;
-        let ping = 0;
-        let lastPingTime = 0;
-        let currentUser = "";
-        let currentKills = 0;
-
-        let isRegisterMode = false;
-
-        // ============================
-        // LOGIC & EVENTS
-        // ============================
+        const SCREEN_WIDTH = 320, SCREEN_HEIGHT = 200, BLOCK_SIZE = 64, FOV = 0.7;
+        let map=[], myId=null, players={}, bots=[], bullets=[], px=150, py=150, dirX=-1, dirY=0, planeX=0, planeY=0.7, isDead=false;
+        const keys={w:false,a:false,s:false,d:false}, mouseState={left:false,right:false};
+        let ammo=30, isReloading=false, isADS=false, shootTimer=0, recoil=0, walkWobble=0, adsFactor=0, reloadAnim=0;
+        let lastTime=performance.now(), fps=60, ping=0, pingStartTime=0, currentUser="", currentKills=0, isRegisterMode=false;
 
         function toggleAuthMode() {
             isRegisterMode = !isRegisterMode;
@@ -236,416 +124,230 @@
             document.querySelector('#login-screen button').innerText = isRegisterMode ? "REGISTER" : "PLAY";
             document.getElementById('auth-toggle-text').innerText = isRegisterMode ? "Have an account? Login!" : "Need an account? Click here to sign up!";
         }
-
         async function submitAuth() {
             const u = document.getElementById('username').value;
             const p = document.getElementById('password').value;
             const endpoint = isRegisterMode ? '/api/auth/register' : '/api/auth/login';
-
             try {
-                const res = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username: u, password: p })
-                });
+                const res = await fetch(endpoint, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({username:u, password:p}) });
                 const data = await res.json();
-                
-                if (data.error) {
-                    alert(data.error);
-                } else if (data.success) {
-                    if (isRegisterMode) {
-                        alert("Account created! Please login.");
-                        toggleAuthMode();
-                    } else {
-                        currentUser = u;
-                        currentKills = data.kills || 0;
+                if(data.error) alert(data.error);
+                else if(data.success) {
+                    if(isRegisterMode) { alert("Created! Login now."); toggleAuthMode(); }
+                    else {
+                        currentUser = u; currentKills = data.kills||0;
                         document.getElementById('login-screen').classList.add('hidden');
                         document.getElementById('hud').style.display = 'block';
-                        socket.emit('join', { username: u });
-                        setupPointerLock();
+                        socket.emit('join', { username: u }); setupPointerLock();
                     }
                 }
-            } catch (e) { alert("Server error"); }
+            } catch(e) { alert("Server error"); }
         }
-
-        function logout() {
-            window.location.href = window.location.pathname; 
-        }
-
-        socket.on('init', (data) => { map = data.map; myId = data.id; });
-        socket.on('state', (data) => {
-            players = data.players;
-            bots = data.bots;
-            bullets = data.bullets;
-            
-            if (players[myId]) {
+        function logout() { window.location.href = window.location.pathname; }
+        
+        socket.on('init', d => { map=d.map; myId=d.id; });
+        socket.on('state', d => {
+            players=d.players; bots=d.bots; bullets=d.bullets;
+            if(players[myId]) {
                 const me = players[myId];
-                // Sync position but allow client smoothing
-                if (Math.hypot(me.x - px, me.y - py) > 100) { px = me.x; py = me.y; }
-                
-                if (me.hp <= 0 && !isDead) {
-                    isDead = true;
-                }
-                
+                if(Math.hypot(me.x-px, me.y-py)>100) { px=me.x; py=me.y; }
+                if(me.hp<=0 && !isDead) isDead=true;
                 document.getElementById('hud-hp').innerText = Math.max(0, me.hp);
-                document.getElementById('hud-hp').style.color = me.hp < 40 ? 'red' : '#0f0';
+                document.getElementById('hud-hp').style.color = me.hp<40?'red':'#0f0';
                 document.getElementById('hud-kills').innerText = me.kills;
                 currentKills = me.kills;
             }
         });
-
-        socket.on('died', (data) => {
+        socket.on('died', d => {
             document.exitPointerLock();
             document.getElementById('death-screen').classList.remove('hidden');
             document.getElementById('hud').style.display = 'none';
-            document.getElementById('killer-name').innerText = data.killer;
+            document.getElementById('killer-name').innerText = d.killer;
         });
 
+        // ** Ping Correction **
         socket.on('pong_check', () => {
-            ping = Date.now() - lastPingTime;
+            ping = Date.now() - pingStartTime; // 只計算 Round Trip Time
         });
 
         function requestRespawn() {
             document.getElementById('death-screen').classList.add('hidden');
             document.getElementById('hud').style.display = 'block';
-            isDead = false;
-            setupPointerLock();
+            isDead=false; setupPointerLock();
         }
-
-        function togglePause() {
-            if (document.pointerLockElement) {
-                document.exitPointerLock();
-            } else {
-                canvas.requestPointerLock();
-            }
-        }
-
+        function togglePause() { document.pointerLockElement ? document.exitPointerLock() : canvas.requestPointerLock(); }
         function setupPointerLock() {
             canvas.requestPointerLock = canvas.requestPointerLock || canvas.mozRequestPointerLock;
-            canvas.onclick = () => {
-                if (!isDead && document.getElementById('pause-menu').classList.contains('hidden')) {
-                    canvas.requestPointerLock();
-                }
-            };
-            
+            canvas.onclick = () => { if(!isDead && document.getElementById('pause-menu').classList.contains('hidden')) canvas.requestPointerLock(); };
             document.addEventListener('pointerlockchange', () => {
                 const menu = document.getElementById('pause-menu');
-                if (document.pointerLockElement === canvas) {
-                    menu.classList.add('hidden');
-                } else if (!isDead && document.getElementById('login-screen').classList.contains('hidden')) {
-                    updatePauseMenu();
-                    menu.classList.remove('hidden');
-                }
+                if(document.pointerLockElement === canvas) menu.classList.add('hidden');
+                else if(!isDead && document.getElementById('login-screen').classList.contains('hidden')) { updatePauseMenu(); menu.classList.remove('hidden'); }
             });
         }
-        
-        function resumeGame() {
-            canvas.requestPointerLock();
-        }
-
+        function resumeGame() { canvas.requestPointerLock(); }
         async function updatePauseMenu() {
             document.getElementById('menu-user').innerText = currentUser;
             document.getElementById('menu-kills').innerText = currentKills;
             document.getElementById('menu-ping').innerText = ping;
             document.getElementById('menu-fps').innerText = Math.round(fps);
-            
-            const list = document.getElementById('server-list');
-            list.innerHTML = `<tr><th>SERVER NAME</th><th>PLAYERS</th></tr>`;
+            const list = document.getElementById('server-list'); list.innerHTML = `<tr><th>SERVER</th><th>PLAYERS</th></tr>`;
             try {
-                const res = await fetch('/api/servers');
-                const servers = await res.json();
-                const currentServer = new URLSearchParams(window.location.search).get('server') || 'server';
-                
-                for (let s in servers) {
+                const res = await fetch('/api/servers'); const servers = await res.json();
+                for(let s in servers) {
                     const tr = document.createElement('tr');
-                    if (s === currentServer) tr.classList.add('active-server');
+                    if(s===currentServer) tr.classList.add('active-server');
                     tr.innerHTML = `<td>${s.toUpperCase()}</td><td>${servers[s]}</td>`;
                     tr.onclick = () => window.location.href = `?server=${s}`;
                     list.appendChild(tr);
                 }
-            } catch(e) {}
+            } catch(e){}
         }
 
-        window.addEventListener('keydown', e => {
-            if (e.key === 'r' || e.key === 'R') reload();
-            keys[e.key.toLowerCase()] = true; 
-        });
-        window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
-        
-        window.addEventListener('mousedown', e => {
-            if (document.pointerLockElement !== canvas) return;
-            if (e.button === 0) mouseState.left = true;
-            if (e.button === 2) {
-                isADS = true;
-                mouseState.right = true;
-            }
-        });
-        window.addEventListener('mouseup', e => {
-            if (e.button === 0) mouseState.left = false;
-            if (e.button === 2) {
-                isADS = false;
-                mouseState.right = false;
-            }
-        });
+        window.addEventListener('keydown', e => { if(e.key==='r'||e.key==='R') reload(); keys[e.key.toLowerCase()]=true; });
+        window.addEventListener('keyup', e => keys[e.key.toLowerCase()]=false);
+        window.addEventListener('mousedown', e => { if(document.pointerLockElement!==canvas)return; if(e.button===0)mouseState.left=true; if(e.button===2){isADS=true;mouseState.right=true;} });
+        window.addEventListener('mouseup', e => { if(e.button===0)mouseState.left=false; if(e.button===2){isADS=false;mouseState.right=false;} });
         window.addEventListener('contextmenu', e => e.preventDefault());
-
         document.addEventListener('mousemove', e => {
-            if (document.pointerLockElement === canvas) {
-                const sensitivity = isADS ? 0.0015 : 0.003;
-                const rot = -e.movementX * sensitivity;
-                const oldDirX = dirX;
-                dirX = dirX * Math.cos(rot) - dirY * Math.sin(rot);
-                dirY = oldDirX * Math.sin(rot) + dirY * Math.cos(rot);
-                const oldPlaneX = planeX;
-                planeX = planeX * Math.cos(rot) - planeY * Math.sin(rot);
-                planeY = oldPlaneX * Math.sin(rot) + planeY * Math.cos(rot);
+            if(document.pointerLockElement===canvas) {
+                const sens = isADS?0.0015:0.003; const rot = -e.movementX*sens;
+                const oldDX=dirX; dirX=dirX*Math.cos(rot)-dirY*Math.sin(rot); dirY=oldDX*Math.sin(rot)+dirY*Math.cos(rot);
+                const oldPX=planeX; planeX=planeX*Math.cos(rot)-planeY*Math.sin(rot); planeY=oldPX*Math.sin(rot)+planeY*Math.cos(rot);
             }
         });
 
         function reload() {
-            if (isReloading || ammo === 30) return;
-            isReloading = true;
-            isADS = false;
-            audio.playReload();
-            
-            let start = Date.now();
+            if(isReloading||ammo===30)return; isReloading=true; isADS=false; audio.playReload();
+            let start=Date.now();
             const interval = setInterval(() => {
-                let progress = (Date.now() - start) / 2600;
-                if (progress > 1) progress = 1;
-                if (progress < 0.5) reloadAnim = progress * 2; 
-                else reloadAnim = 1 - (progress - 0.5) * 2; 
-                
-                if (progress >= 1) {
-                    clearInterval(interval);
-                    ammo = 30;
-                    isReloading = false;
-                    reloadAnim = 0;
-                    document.getElementById('hud-ammo').innerText = ammo;
-                }
+                let p = (Date.now()-start)/2600; if(p>1)p=1;
+                reloadAnim = p<0.5 ? p*2 : 1-(p-0.5)*2;
+                if(p>=1) { clearInterval(interval); ammo=30; isReloading=false; reloadAnim=0; document.getElementById('hud-ammo').innerText=ammo; }
             }, 16);
         }
 
-        // ============================
-        // RENDERING
-        // ============================
         function drawScene() {
-            ctx.fillStyle = '#111'; ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT / 2);
-            ctx.fillStyle = '#222'; ctx.fillRect(0, SCREEN_HEIGHT / 2, SCREEN_WIDTH, SCREEN_HEIGHT / 2);
-
-            if (map.length === 0) return;
+            ctx.fillStyle = '#111'; ctx.fillRect(0,0,SCREEN_WIDTH,SCREEN_HEIGHT/2);
+            ctx.fillStyle = '#222'; ctx.fillRect(0,SCREEN_HEIGHT/2,SCREEN_WIDTH,SCREEN_HEIGHT/2);
+            if(map.length===0)return;
             const zBuffer = new Array(SCREEN_WIDTH).fill(0);
 
-            for (let x = 0; x < SCREEN_WIDTH; x++) {
-                const cameraX = 2 * x / SCREEN_WIDTH - 1;
-                const rayDirX = dirX + planeX * cameraX;
-                const rayDirY = dirY + planeY * cameraX;
-                let mapX = Math.floor(px / BLOCK_SIZE);
-                let mapY = Math.floor(py / BLOCK_SIZE);
-                let sideDistX, sideDistY, perpWallDist, side;
-                const deltaDistX = Math.abs(1 / rayDirX);
-                const deltaDistY = Math.abs(1 / rayDirY);
-                const stepX = rayDirX < 0 ? -1 : 1;
-                const stepY = rayDirY < 0 ? -1 : 1;
-                
-                sideDistX = rayDirX < 0 ? (px/BLOCK_SIZE - mapX)*deltaDistX : (mapX+1.0 - px/BLOCK_SIZE)*deltaDistX;
-                sideDistY = rayDirY < 0 ? (py/BLOCK_SIZE - mapY)*deltaDistY : (mapY+1.0 - py/BLOCK_SIZE)*deltaDistY;
-
-                let hit = 0;
-                while (hit === 0) {
-                    if (sideDistX < sideDistY) { sideDistX += deltaDistX; mapX += stepX; side = 0; }
-                    else { sideDistY += deltaDistY; mapY += stepY; side = 1; }
-                    if (map[mapY] && map[mapY][mapX] > 0) hit = 1;
+            for(let x=0; x<SCREEN_WIDTH; x++) {
+                const camX = 2*x/SCREEN_WIDTH-1;
+                const rayDirX=dirX+planeX*camX, rayDirY=dirY+planeY*camX;
+                let mapX=Math.floor(px/BLOCK_SIZE), mapY=Math.floor(py/BLOCK_SIZE);
+                let sideDistX, sideDistY;
+                const deltaDistX=Math.abs(1/rayDirX), deltaDistY=Math.abs(1/rayDirY);
+                const stepX=rayDirX<0?-1:1, stepY=rayDirY<0?-1:1;
+                sideDistX = rayDirX<0 ? (px/BLOCK_SIZE-mapX)*deltaDistX : (mapX+1.0-px/BLOCK_SIZE)*deltaDistX;
+                sideDistY = rayDirY<0 ? (py/BLOCK_SIZE-mapY)*deltaDistY : (mapY+1.0-py/BLOCK_SIZE)*deltaDistY;
+                let hit=0, side;
+                while(hit===0) {
+                    if(sideDistX<sideDistY) { sideDistX+=deltaDistX; mapX+=stepX; side=0; }
+                    else { sideDistY+=deltaDistY; mapY+=stepY; side=1; }
+                    if(map[mapY]&&map[mapY][mapX]>0) hit=1;
                 }
-
-                perpWallDist = side === 0 ? (sideDistX - deltaDistX) : (sideDistY - deltaDistY);
-                zBuffer[x] = perpWallDist;
-
-                const lineHeight = Math.floor(SCREEN_HEIGHT / perpWallDist);
-                let drawStart = -lineHeight / 2 + SCREEN_HEIGHT / 2;
-                if (drawStart < 0) drawStart = 0;
-                let drawEnd = lineHeight / 2 + SCREEN_HEIGHT / 2;
-                if (drawEnd >= SCREEN_HEIGHT) drawEnd = SCREEN_HEIGHT - 1;
-
-                let color = 255 - perpWallDist * 15;
-                if (side === 1) color *= 0.7; 
-                ctx.fillStyle = `rgb(${color}, ${color/2}, ${color/2})`;
-                ctx.fillRect(x, drawStart, 1, drawEnd - drawStart);
+                const perpDist = side===0 ? (sideDistX-deltaDistX) : (sideDistY-deltaDistY);
+                zBuffer[x] = perpDist;
+                const h = Math.floor(SCREEN_HEIGHT/perpDist);
+                let start = -h/2 + SCREEN_HEIGHT/2; if(start<0)start=0;
+                let end = h/2 + SCREEN_HEIGHT/2; if(end>=SCREEN_HEIGHT)end=SCREEN_HEIGHT-1;
+                let col = 255-perpDist*15; if(side===1)col*=0.7;
+                ctx.fillStyle = `rgb(${col},${col/2},${col/2})`; ctx.fillRect(x,start,1,end-start);
             }
 
             const sprites = [];
-            for (let id in players) {
-                if (id !== myId && players[id].hp > 0) 
-                    sprites.push({ x: players[id].x, y: players[id].y, type: 'player' });
-            }
-            bots.forEach(b => { if (b.hp > 0) sprites.push({ x: b.x, y: b.y, type: 'bot' }); });
-            bullets.forEach(b => sprites.push({ x: b.x, y: b.y, type: 'bullet' }));
-
-            sprites.sort((a, b) => ((px - b.x)**2 + (py - b.y)**2) - ((px - a.x)**2 + (py - a.y)**2));
+            for(let id in players) if(id!==myId && players[id].hp>0) sprites.push({...players[id], type:'player'});
+            bots.forEach(b => { if(b.hp>0) sprites.push({...b, type:'bot'}); });
+            bullets.forEach(b => sprites.push({...b, type:'bullet'}));
+            sprites.sort((a,b) => ((px-b.x)**2+(py-b.y)**2) - ((px-a.x)**2+(py-a.y)**2));
 
             sprites.forEach(sprite => {
-                const spriteX = (sprite.x - px) / BLOCK_SIZE;
-                const spriteY = (sprite.y - py) / BLOCK_SIZE;
-                const invDet = 1.0 / (planeX * dirY - dirX * planeY);
-                const transformX = invDet * (dirY * spriteX - dirX * spriteY);
-                const transformY = invDet * (-planeY * spriteX + planeX * spriteY); 
-
-                if (transformY > 0) {
-                    const spriteScreenX = Math.floor((SCREEN_WIDTH / 2) * (1 + transformX / transformY));
-                    const spriteHeight = Math.abs(Math.floor(SCREEN_HEIGHT / transformY));
-                    const spriteWidth = spriteHeight / 2;
-                    const spriteTop = (SCREEN_HEIGHT - spriteHeight) / 2;
-                    const spriteLeft = spriteScreenX - spriteWidth / 2;
-
-                    if (transformY < zBuffer[spriteScreenX]) {
-                        if (sprite.type === 'bullet') {
-                            ctx.fillStyle = '#ffeb3b';
-                            ctx.beginPath(); ctx.arc(spriteScreenX, spriteTop+spriteHeight/2, spriteWidth/2, 0, Math.PI*2); ctx.fill();
+                const spX = (sprite.x-px)/BLOCK_SIZE; const spY = (sprite.y-py)/BLOCK_SIZE;
+                const invDet = 1.0/(planeX*dirY-dirX*planeY);
+                const tfX = invDet*(dirY*spX-dirX*spY); const tfY = invDet*(-planeY*spX+planeX*spY);
+                if(tfY>0) {
+                    const sScrX = Math.floor((SCREEN_WIDTH/2)*(1+tfX/tfY));
+                    const sH = Math.abs(Math.floor(SCREEN_HEIGHT/tfY));
+                    const sW = sH/2; const sTop = (SCREEN_HEIGHT-sH)/2; const sLeft = sScrX-sW/2;
+                    if(tfY < zBuffer[sScrX]) {
+                        if(sprite.type==='bullet') {
+                            ctx.fillStyle='#ffeb3b'; ctx.beginPath(); ctx.arc(sScrX,sTop+sH/2,sW/2,0,Math.PI*2); ctx.fill();
                         } else {
-                            ctx.fillStyle = sprite.type === 'bot' ? '#d32f2f' : '#2196f3';
-                            ctx.fillRect(spriteLeft, spriteTop, spriteWidth, spriteHeight);
+                            ctx.fillStyle = sprite.type==='bot'?'#d32f2f':'#2196f3';
+                            ctx.fillRect(sLeft, sTop, sW, sH);
                             ctx.fillStyle = '#fff';
-                            ctx.fillRect(spriteLeft+spriteWidth*0.2, spriteTop+spriteHeight*0.2, spriteWidth*0.2, spriteHeight*0.1);
-                            ctx.fillRect(spriteLeft+spriteWidth*0.6, spriteTop+spriteHeight*0.2, spriteWidth*0.2, spriteHeight*0.1);
+                            ctx.fillRect(sLeft+sW*0.2, sTop+sH*0.2, sW*0.2, sH*0.1);
+                            ctx.fillRect(sLeft+sW*0.6, sTop+sH*0.2, sW*0.2, sH*0.1);
+                            
+                            // ** Render Name Tag **
+                            ctx.fillStyle = '#fff';
+                            // 根據距離調整字體大小 (簡單的 3D 透視)
+                            const fontSize = Math.max(8, Math.floor(sH / 3)); 
+                            ctx.font = `${fontSize}px 'Press Start 2P'`;
+                            ctx.textAlign = 'center';
+                            // 名字在頭頂
+                            ctx.fillText(sprite.username, sLeft + sW/2, sTop - 5);
                         }
                     }
                 }
             });
-
-            if (!isDead) drawGun();
+            if(!isDead) drawGun();
         }
 
         function drawGun() {
-            if (isADS) adsFactor += 0.1; else adsFactor -= 0.1;
-            if (adsFactor < 0) adsFactor = 0; if (adsFactor > 1) adsFactor = 1;
-
-            let isMoving = keys.w || keys.s || keys.a || keys.d;
-            if (isMoving) walkWobble += 0.2; else walkWobble = 0;
-            const bobX = Math.cos(walkWobble) * 5 * (1 - adsFactor);
-            const bobY = Math.abs(Math.sin(walkWobble)) * 5 * (1 - adsFactor);
-
-            if (recoil > 0) recoil -= 2;
-            const reloadDip = reloadAnim * 100;
-            const reloadRot = reloadAnim * 0.5;
-
-            const hipX = SCREEN_WIDTH * 0.75;
-            const hipY = SCREEN_HEIGHT;
-            const adsX = SCREEN_WIDTH / 2;
-            const adsY = SCREEN_HEIGHT;
-
-            const gunX = hipX + (adsX - hipX) * adsFactor + bobX;
-            const gunY = hipY + (adsY - hipY) * adsFactor + bobY + recoil + reloadDip;
-
-            ctx.save();
-            ctx.translate(gunX, gunY);
-            ctx.rotate(reloadRot); 
-            
-            ctx.fillStyle = '#4e342e'; 
-            ctx.beginPath();
-            ctx.moveTo(-40, 0); 
-            ctx.lineTo(40, 0);  
-            const topWidth = 20 - adsFactor * 10;
-            ctx.lineTo(topWidth, -140); 
-            ctx.lineTo(-topWidth, -140); 
-            ctx.fill();
-
-            ctx.fillStyle = '#212121';
-            ctx.fillRect(-15 + adsFactor*5, -60, 30 - adsFactor*10, 60);
-
-            if (reloadAnim < 0.3) { 
-                ctx.fillStyle = '#111';
-                ctx.beginPath();
-                ctx.moveTo(-10, -50);
-                ctx.quadraticCurveTo(-40, -20, -20, 10);
-                ctx.lineTo(10, -50);
-                ctx.fill();
-            }
-
-            ctx.fillStyle = '#000';
-            ctx.fillRect(-5 + adsFactor*2, -140, 10 - adsFactor*4, 100);
-            
-            ctx.fillStyle = '#111';
-            ctx.fillRect(-2, -140, 4, 10);
-
-            if (adsFactor > 0.9) {
-                 ctx.fillStyle = '#333';
-                 ctx.fillRect(-20, -50, 40, 5);
-                 ctx.fillStyle = 'rgba(0,0,0,0.5)'; 
-                 ctx.fillRect(-4, -55, 8, 5); 
-            }
-
-            if (recoil > 10) {
-                ctx.fillStyle = `rgba(255, 235, 59, ${Math.random()})`;
-                ctx.beginPath();
-                ctx.arc(0, -150, 15 + Math.random()*20, 0, Math.PI*2);
-                ctx.fill();
-            }
-
+            if(isADS) adsFactor+=0.1; else adsFactor-=0.1; if(adsFactor<0)adsFactor=0; if(adsFactor>1)adsFactor=1;
+            let move=keys.w||keys.s||keys.a||keys.d; if(move)walkWobble+=0.2; else walkWobble=0;
+            const bobX=Math.cos(walkWobble)*5*(1-adsFactor); const bobY=Math.abs(Math.sin(walkWobble))*5*(1-adsFactor);
+            if(recoil>0)recoil-=2;
+            const gunX = SCREEN_WIDTH*0.75 + (SCREEN_WIDTH/2 - SCREEN_WIDTH*0.75)*adsFactor + bobX;
+            const gunY = SCREEN_HEIGHT + bobY + recoil + reloadAnim*100;
+            ctx.save(); ctx.translate(gunX, gunY); ctx.rotate(reloadAnim*0.5);
+            ctx.fillStyle='#4e342e'; ctx.beginPath(); ctx.moveTo(-40,0); ctx.lineTo(40,0);
+            const topW = 20-adsFactor*10; ctx.lineTo(topW,-140); ctx.lineTo(-topW,-140); ctx.fill();
+            ctx.fillStyle='#212121'; ctx.fillRect(-15+adsFactor*5,-60,30-adsFactor*10,60);
+            if(reloadAnim<0.3) { ctx.fillStyle='#111'; ctx.beginPath(); ctx.moveTo(-10,-50); ctx.quadraticCurveTo(-40,-20,-20,10); ctx.lineTo(10,-50); ctx.fill(); }
+            ctx.fillStyle='#000'; ctx.fillRect(-5+adsFactor*2,-140,10-adsFactor*4,100);
+            ctx.fillStyle='#111'; ctx.fillRect(-2,-140,4,10);
+            if(adsFactor>0.9) { ctx.fillStyle='#333'; ctx.fillRect(-20,-50,40,5); ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(-4,-55,8,5); }
+            if(recoil>10) { ctx.fillStyle=`rgba(255,235,59,${Math.random()})`; ctx.beginPath(); ctx.arc(0,-150,15+Math.random()*20,0,Math.PI*2); ctx.fill(); }
             ctx.restore();
         }
 
-        // ============================
-        // GAME LOOP
-        // ============================
+        let pingTimer = 0;
         function loop() {
-            const now = performance.now();
-            const delta = (now - lastTime) / 1000;
-            lastTime = now;
-            fps = 1 / delta;
-            
-            if (now - lastPingTime > 1000) {
-                lastPingTime = now;
+            const now=performance.now(); const delta=(now-lastTime)/1000; lastTime=now; fps=1/delta;
+            // ** Fixed Ping Logic **
+            if(now - pingTimer > 1000) {
+                pingTimer = now;
+                pingStartTime = Date.now(); // 記錄發出時間
                 socket.emit('ping_check');
                 document.getElementById('hud-fps').innerText = Math.round(fps);
                 document.getElementById('hud-ping').innerText = ping;
             }
 
-            if (myId && !isDead) {
-                if (mouseState.left && !isReloading && ammo > 0) {
-                    if (shootTimer <= 0) {
-                        socket.emit('shoot');
-                        audio.playShoot();
-                        ammo--;
-                        recoil = 25;
-                        shootTimer = 6; 
-                        document.getElementById('hud-ammo').innerText = ammo;
-                    }
+            if(myId && !isDead) {
+                if(mouseState.left && !isReloading && ammo>0) {
+                    if(shootTimer<=0) { socket.emit('shoot'); audio.playShoot(); ammo--; recoil=25; shootTimer=6; document.getElementById('hud-ammo').innerText=ammo; }
                 }
-                if (shootTimer > 0) shootTimer--;
+                if(shootTimer>0) shootTimer--;
+                if(ammo===0 && !isReloading) reload();
 
-                if (ammo === 0 && !isReloading) reload();
+                // ** Wall Sliding Fix **
+                const sp = 0.12; let dx=0, dy=0;
+                if(keys.w){dx+=dirX;dy+=dirY;} if(keys.s){dx-=dirX;dy-=dirY;}
+                if(keys.a){dx+=dirY;dy-=dirX;} if(keys.d){dx-=dirY;dy+=dirX;}
+                let nextX = px + dx*sp;
+                if(map[Math.floor(py/BLOCK_SIZE)] && map[Math.floor(py/BLOCK_SIZE)][Math.floor(nextX/BLOCK_SIZE)]===0) px=nextX;
+                let nextY = py + dy*sp;
+                if(map[Math.floor(nextY/BLOCK_SIZE)] && map[Math.floor(nextY/BLOCK_SIZE)][Math.floor(px/BLOCK_SIZE)]===0) py=nextY;
 
-                // MOVEMENT FIX: Wall Sliding
-                const moveSpeed = 0.12; 
-                let dx = 0; 
-                let dy = 0;
-                
-                // Calculate move vector based on direction
-                if (keys.w) { dx += dirX; dy += dirY; }
-                if (keys.s) { dx -= dirX; dy -= dirY; }
-                if (keys.a) { dx += dirY; dy -= dirX; } // Strafe
-                if (keys.d) { dx -= dirY; dy += dirX; }
-
-                // Check X axis movement independently
-                let nextX = px + dx * moveSpeed;
-                if (map[Math.floor(py/BLOCK_SIZE)] && map[Math.floor(py/BLOCK_SIZE)][Math.floor(nextX/BLOCK_SIZE)] === 0) {
-                    px = nextX;
-                }
-
-                // Check Y axis movement independently (Sliding)
-                let nextY = py + dy * moveSpeed;
-                if (map[Math.floor(nextY/BLOCK_SIZE)] && map[Math.floor(nextY/BLOCK_SIZE)][Math.floor(px/BLOCK_SIZE)] === 0) {
-                    py = nextY;
-                }
-                
-                socket.emit('input', { keys, angle: Math.atan2(dirY, dirX) });
+                socket.emit('input', { keys, angle: Math.atan2(dirY,dirX) });
             }
-
-            drawScene();
-            requestAnimationFrame(loop);
+            drawScene(); requestAnimationFrame(loop);
         }
-        
         requestAnimationFrame(loop);
-
     </script>
 </body>
 </html>
