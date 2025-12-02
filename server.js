@@ -257,7 +257,7 @@ setInterval(() => {
 
 app.get('/api/servers', (req, res) => {
     const list = {};
-    ["battle", "nex", "playground", "server", "index", "space", "universe", "contraption"].forEach(s => {
+    ["server", "battle", "playground", "index", "space", "universe", "contraption", "nex",].forEach(s => {
         list[s] = ROOMS[s] ? Object.keys(ROOMS[s].players).length : 0;
     });
     res.json(list);
