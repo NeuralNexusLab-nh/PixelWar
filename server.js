@@ -257,10 +257,14 @@ setInterval(() => {
 
 app.get('/api/servers', (req, res) => {
     const list = {};
-    ["server", "battle", "playground", "index", "space", "universe", "contraption", "nex",].forEach(s => {
+    ["server", "battle", "playground", "universe", "field"].forEach(s => {
         list[s] = ROOMS[s] ? Object.keys(ROOMS[s].players).length : 0;
     });
     res.json(list);
+});
+
+app.get("/plugin/:file", (req, res) => {
+    res.sendFile(path.join(__dirname, "plugin", req.params.file));
 });
 
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
