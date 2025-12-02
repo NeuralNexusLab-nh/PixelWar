@@ -1,7 +1,7 @@
 {
   "name": "pixel-war-fps-advanced",
-  "version": "2.0.0",
-  "description": "Advanced Raycasting FPS with FS DB and Rooms",
+  "version": "2.1.0",
+  "description": "FPS with Usernames and Fixed Ping",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
