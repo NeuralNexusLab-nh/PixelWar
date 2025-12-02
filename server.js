@@ -1,7 +1,9 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const Redis = require('ioredis');
+const fs = require('fs');
+const path = require('path');
+const bcrypt = require('bcrypt');
 const helmet = require('helmet');
 const cors = require('cors');
 
@@ -10,18 +12,71 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
 const PORT = process.env.PORT || 3000;
-// 如果沒有 Redis URL，不會報錯，只是不存檔
-const redis = process.env.REDIS_URL ? new Redis(process.env.REDIS_URL) : null;
+const DB_FILE = path.join(__dirname, 'db.json');
 
+// ============================
+// 1. Local Filesystem Database
+// ============================
+// Initialize DB if not exists
+if (!fs.existsSync(DB_FILE)) {
+    fs.writeFileSync(DB_FILE, JSON.stringify({ users: {} }, null, 2));
+}
+
+function readDb() {
+    try {
+        const data = fs.readFileSync(DB_FILE, 'utf8');
+        return JSON.parse(data);
+    } catch (e) {
+        return { users: {} };
+    }
+}
+
+function writeDb(data) {
+    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+}
+
+// ============================
+// 2. Middleware & Config
+// ============================
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
+app.use(express.json());
 app.use(express.static('public'));
 
 // ============================
-// 1. 地圖設定
+// 3. Auth Routes (FS Based)
+// ============================
+app.post('/api/auth/register', async (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password || username.length < 3) return res.status(400).json({ error: "Invalid input" });
+
+    const db = readDb();
+    if (db.users[username]) return res.status(400).json({ error: "User already exists" });
+
+    const hash = await bcrypt.hash(password, 10);
+    db.users[username] = { password: hash, kills: 0, deaths: 0 };
+    writeDb(db);
+    
+    res.json({ success: true });
+});
+
+app.post('/api/auth/login', async (req, res) => {
+    const { username, password } = req.body;
+    const db = readDb();
+    const user = db.users[username];
+
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+        return res.status(401).json({ error: "Invalid credentials" });
+    }
+    
+    res.json({ success: true, kills: user.kills, deaths: user.deaths });
+});
+
+// ============================
+// 4. Game Logic & Rooms
 // ============================
 const BLOCK_SIZE = 64;
-// 地圖: 1=牆, 0=空
+// Map: 1=Wall, 0=Empty
 const WORLD_MAP = [
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
   [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
@@ -33,200 +88,228 @@ const WORLD_MAP = [
   [1,0,0,0,0,0,0,0,0,1,1,0,1,1,0,0,0,0,0,0,0,0,0,1],
   [1,0,1,1,0,0,0,0,0,1,0,0,0,1,0,0,0,0,0,0,0,0,0,1],
   [1,0,0,0,0,0,0,0,0,1,1,0,1,1,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
 ];
 
-const PLAYERS = {};
-const BULLETS = [];
+// State per room
+const ROOMS = {}; 
 
-// ============================
-// 2. NPC 機器人邏輯
-// ============================
-const BOT_COUNT = 5;
-
-function spawnBots() {
-    for (let i = 0; i < BOT_COUNT; i++) {
-        const botId = `bot_${i}`;
-        PLAYERS[botId] = {
-            id: botId,
-            username: `[BOT] Alpha-${i}`,
-            x: (3 + i) * BLOCK_SIZE,
-            y: (3 + i) * BLOCK_SIZE,
-            angle: Math.random() * Math.PI * 2,
-            hp: 100, // Bot 血量稍微少一點
-            kills: 0,
-            deaths: 0,
-            isBot: true,
-            moveTimer: 0,
-            targetAngle: 0
+function getRoomState(roomName) {
+    if (!ROOMS[roomName]) {
+        ROOMS[roomName] = {
+            players: {},
+            bullets: [],
+            bots: []
         };
-    }
-}
-spawnBots(); // 啟動時生成
-
-function updateBots() {
-    for (const id in PLAYERS) {
-        const bot = PLAYERS[id];
-        if (!bot.isBot || bot.hp <= 0) continue;
-
-        // 1. 簡單 AI: 隨機移動
-        bot.moveTimer--;
-        if (bot.moveTimer <= 0) {
-            bot.moveTimer = Math.floor(Math.random() * 60) + 30; // 0.5 ~ 1.5秒改變一次決策
-            bot.targetAngle = Math.random() * Math.PI * 2;
-        }
-
-        // 平滑轉向
-        const diff = bot.targetAngle - bot.angle;
-        bot.angle += diff * 0.1;
-
-        // 向前移動
-        const speed = 2; // Bot 走慢一點
-        const nextX = bot.x + Math.cos(bot.angle) * speed;
-        const nextY = bot.y + Math.sin(bot.angle) * speed;
-        
-        // 簡單碰撞檢查
-        const gx = Math.floor(nextX / BLOCK_SIZE);
-        const gy = Math.floor(nextY / BLOCK_SIZE);
-        if (WORLD_MAP[gy] && WORLD_MAP[gy][gx] === 0) {
-            bot.x = nextX;
-            bot.y = nextY;
-        } else {
-            // 撞牆就反轉
-            bot.targetAngle += Math.PI;
-        }
-
-        // 2. 簡單 AI: 隨機射擊
-        if (Math.random() < 0.02) { // 2% 機率開槍
-            BULLETS.push({
-                x: bot.x,
-                y: bot.y,
-                angle: bot.angle + (Math.random()-0.5)*0.2, // 稍微不準
-                owner: id,
-                speed: 15,
-                life: 60
+        // Spawn bots for this room
+        for (let i = 0; i < 5; i++) {
+            ROOMS[roomName].bots.push({
+                id: `bot_${roomName}_${i}`,
+                username: `[BOT] NPC-${i}`,
+                x: (3 + i) * BLOCK_SIZE,
+                y: (3 + i) * BLOCK_SIZE,
+                angle: Math.random() * 6.28,
+                hp: 100,
+                isBot: true,
+                fireTimer: 0
             });
         }
     }
+    return ROOMS[roomName];
 }
 
-// ============================
-// 3. Socket & 遊戲迴圈
-// ============================
 io.on('connection', (socket) => {
+    // Get server room from query param
+    const roomName = socket.handshake.query.server || 'server';
+    socket.join(roomName);
+    
+    const room = getRoomState(roomName);
+
     socket.on('join', (data) => {
-        PLAYERS[socket.id] = {
+        // Fetch latest stats from DB
+        const db = readDb();
+        const userStats = db.users[data.username] || { kills: 0, deaths: 0 };
+
+        room.players[socket.id] = {
             id: socket.id,
-            username: data.username || "Guest",
+            username: data.username,
             x: 2 * BLOCK_SIZE,
             y: 2 * BLOCK_SIZE,
             angle: 0,
             hp: 150,
-            kills: 0,
-            deaths: 0,
+            kills: userStats.kills,
+            deaths: userStats.deaths,
             isBot: false
         };
-        socket.emit('init', { map: WORLD_MAP, blockSize: BLOCK_SIZE, id: socket.id });
+        
+        socket.emit('init', { map: WORLD_MAP, id: socket.id });
     });
 
     socket.on('input', (data) => {
-        const p = PLAYERS[socket.id];
+        const p = room.players[socket.id];
         if (!p || p.hp <= 0) return;
-
-        // 更新位置與角度 (信任前端傳來的預測位置，但做基本防作弊檢查可在此加)
-        // 為了簡單流暢，這裡直接接受前端的計算結果，但前端要傳送的是 input 狀態，這裡簡化處理
-        // 由於我們改成了 Client-Prediction，前端主要傳送 keys 和 angle
-        // 這裡為了配合上一版的代碼，我們假設前端可以處理好位置同步，或是我們後端重算
-        // 這裡採用: 後端重算 (權威伺服器)
         
         p.angle = data.angle;
+        // Simple movement validation could go here
+        // For responsiveness, we trust client Input mostly but check collisions
         const moveSpeed = 5;
         let dx = 0, dy = 0;
+        if (data.keys.w) { dx += Math.cos(p.angle)*moveSpeed; dy += Math.sin(p.angle)*moveSpeed; }
+        if (data.keys.s) { dx -= Math.cos(p.angle)*moveSpeed; dy -= Math.sin(p.angle)*moveSpeed; }
         
-        if (data.keys.w) { dx += Math.cos(p.angle) * moveSpeed; dy += Math.sin(p.angle) * moveSpeed; }
-        if (data.keys.s) { dx -= Math.cos(p.angle) * moveSpeed; dy -= Math.sin(p.angle) * moveSpeed; }
-        // 簡單側移邏輯略過，以保持代碼簡潔
+        const nextX = p.x + dx;
+        const nextY = p.y + dy;
+        const gx = Math.floor(nextX / BLOCK_SIZE);
+        const gy = Math.floor(nextY / BLOCK_SIZE);
 
-        const newX = p.x + dx;
-        const newY = p.y + dy;
-        const gridX = Math.floor(newX / BLOCK_SIZE);
-        const gridY = Math.floor(newY / BLOCK_SIZE);
-
-        if (WORLD_MAP[gridY] && WORLD_MAP[gridY][gridX] === 0) {
-            p.x = newX;
-            p.y = newY;
+        if (WORLD_MAP[gy] && WORLD_MAP[gy][gx] === 0) {
+            p.x = nextX;
+            p.y = nextY;
         }
     });
 
     socket.on('shoot', () => {
-        const p = PLAYERS[socket.id];
+        const p = room.players[socket.id];
         if (!p || p.hp <= 0) return;
-        BULLETS.push({
-            x: p.x,
-            y: p.y,
-            angle: p.angle,
-            owner: socket.id,
-            speed: 20,
-            life: 50
+        
+        room.bullets.push({
+            x: p.x, y: p.y, angle: p.angle,
+            owner: socket.id, speed: 20, life: 50, damage: 10 // Player Damage
         });
     });
 
     socket.on('disconnect', () => {
-        delete PLAYERS[socket.id];
+        // Save stats on disconnect
+        const p = room.players[socket.id];
+        if (p) {
+            const db = readDb();
+            if (db.users[p.username]) {
+                db.users[p.username].kills = p.kills;
+                db.users[p.username].deaths = p.deaths;
+                writeDb(db);
+            }
+            delete room.players[socket.id];
+        }
     });
+
+    // Handle Ping
+    socket.on('ping_check', () => socket.emit('pong_check', Date.now()));
 });
 
+// Game Loop (Process all rooms)
 setInterval(() => {
-    updateBots(); // 更新機器人
-
-    // 子彈邏輯
-    for (let i = BULLETS.length - 1; i >= 0; i--) {
-        const b = BULLETS[i];
-        b.x += Math.cos(b.angle) * b.speed;
-        b.y += Math.sin(b.angle) * b.speed;
-        b.life--;
-
-        const gx = Math.floor(b.x / BLOCK_SIZE);
-        const gy = Math.floor(b.y / BLOCK_SIZE);
+    for (const roomName in ROOMS) {
+        const room = ROOMS[roomName];
         
-        // 撞牆
-        if (!WORLD_MAP[gy] || WORLD_MAP[gy][gx] === 1 || b.life <= 0) {
-            BULLETS.splice(i, 1);
-            continue;
-        }
+        // 1. Bot Logic
+        room.bots.forEach(bot => {
+            if (bot.hp <= 0) {
+                 // Respawn bot
+                 if (Math.random() < 0.01) {
+                     bot.hp = 100;
+                     bot.x = (Math.random()*10 + 2) * BLOCK_SIZE;
+                     bot.y = (Math.random()*10 + 2) * BLOCK_SIZE;
+                 }
+                 return;
+            }
 
-        // 撞人 (玩家 & Bot)
-        for (let id in PLAYERS) {
-            const p = PLAYERS[id];
-            if (id !== b.owner && p.hp > 0) {
-                const dist = Math.hypot(p.x - b.x, p.y - b.y);
+            // Move Randomly
+            if (Math.random() < 0.05) bot.angle += (Math.random()-0.5);
+            const bx = bot.x + Math.cos(bot.angle) * 2;
+            const by = bot.y + Math.sin(bot.angle) * 2;
+            if (WORLD_MAP[Math.floor(by/BLOCK_SIZE)] && WORLD_MAP[Math.floor(by/BLOCK_SIZE)][Math.floor(bx/BLOCK_SIZE)] === 0) {
+                bot.x = bx; bot.y = by;
+            } else {
+                bot.angle += 3.14; // Turn around
+            }
+
+            // Fire Randomly (0.6 ~ 2.3 seconds)
+            // 60 ticks per sec. 0.6s = 36 ticks, 2.3s = 138 ticks
+            if (bot.fireTimer <= 0) {
+                room.bullets.push({
+                    x: bot.x, y: bot.y, angle: bot.angle + (Math.random()-0.5)*0.1,
+                    owner: bot.id, speed: 15, life: 60, damage: 30 // NPC Damage
+                });
+                bot.fireTimer = Math.floor(Math.random() * (138 - 36) + 36);
+            }
+            bot.fireTimer--;
+        });
+
+        // 2. Bullet Logic
+        for (let i = room.bullets.length - 1; i >= 0; i--) {
+            const b = room.bullets[i];
+            b.x += Math.cos(b.angle) * b.speed;
+            b.y += Math.sin(b.angle) * b.speed;
+            b.life--;
+
+            const gx = Math.floor(b.x / BLOCK_SIZE);
+            const gy = Math.floor(b.y / BLOCK_SIZE);
+
+            if (!WORLD_MAP[gy] || WORLD_MAP[gy][gx] === 1 || b.life <= 0) {
+                room.bullets.splice(i, 1);
+                continue;
+            }
+
+            // Collision with Players & Bots
+            const allEntities = [...Object.values(room.players), ...room.bots];
+            
+            for (const entity of allEntities) {
+                if (entity.hp <= 0 || entity.id === b.owner) continue;
+
+                const dist = Math.hypot(entity.x - b.x, entity.y - b.y);
                 if (dist < 30) {
-                    p.hp -= 12;
-                    BULLETS.splice(i, 1);
-                    
-                    if (p.hp <= 0) {
-                        // 擊殺邏輯
-                        const killer = PLAYERS[b.owner];
-                        if (killer) killer.kills++;
-                        p.deaths++;
+                    entity.hp -= b.damage;
+                    room.bullets.splice(i, 1);
+
+                    if (entity.hp <= 0) {
+                        entity.deaths = (entity.deaths || 0) + 1;
                         
-                        // 重生
-                        setTimeout(() => {
-                            if (PLAYERS[id]) {
-                                PLAYERS[id].hp = p.isBot ? 100 : 150;
-                                PLAYERS[id].x = (Math.random() * 10 + 2) * BLOCK_SIZE;
-                                PLAYERS[id].y = (Math.random() * 10 + 2) * BLOCK_SIZE;
-                            }
-                        }, 3000);
+                        // Identify killer name
+                        let killerName = "Unknown";
+                        if (b.owner.startsWith('bot')) {
+                             const bot = room.bots.find(x => x.id === b.owner);
+                             killerName = bot ? bot.username : "NPC";
+                        } else if (room.players[b.owner]) {
+                             killerName = room.players[b.owner].username;
+                             room.players[b.owner].kills++;
+                        }
+
+                        // Send Death Event if it's a real player
+                        if (!entity.isBot) {
+                            io.to(entity.id).emit('died', { killer: killerName });
+                            // Respawn timer handled by client request or auto logic
+                            setTimeout(() => {
+                                if (room.players[entity.id]) {
+                                    room.players[entity.id].hp = 150;
+                                    room.players[entity.id].x = 2 * BLOCK_SIZE;
+                                    room.players[entity.id].y = 2 * BLOCK_SIZE;
+                                }
+                            }, 3000);
+                        }
                     }
                     break;
                 }
             }
         }
+        
+        // Broadcast to this room only
+        io.to(roomName).emit('state', { 
+            players: room.players, 
+            bots: room.bots,
+            bullets: room.bullets,
+            playerCount: Object.keys(room.players).length
+        });
     }
-    io.emit('state', { players: PLAYERS, bullets: BULLETS });
 }, 1000 / 60);
 
-server.listen(PORT, () => console.log(`Server running on ${PORT}`));
+// API to get room counts
+app.get('/api/servers', (req, res) => {
+    const list = {};
+    const servers = ["battle", "nex", "playground", "server", "index", "space", "universe", "contraption"];
+    servers.forEach(s => {
+        list[s] = ROOMS[s] ? Object.keys(ROOMS[s].players).length : 0;
+    });
+    res.json(list);
+});
+
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
