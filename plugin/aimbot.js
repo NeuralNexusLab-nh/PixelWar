@@ -1,5 +1,5 @@
 (function(){
-    console.log("%c [AIMBOT] INJECTED ", "color: red; background: black; font-weight: bold;");
+    console.log("%c [AIMBOT] INJECTED [Press right mouse]", "color: red; background: black; font-weight: bold;");
     const sensitivity = 1.0; 
     
     setInterval(() => {
