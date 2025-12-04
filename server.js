@@ -255,6 +255,10 @@ setInterval(() => {
     }
 }, 1000/60);
 
+app.all("/healthz", (req, res) => {
+    res.status(200).send("true");
+});
+
 app.get('/api/servers', (req, res) => {
     const list = {};
     ["server", "battle", "playground", "universe", "field"].forEach(s => {
