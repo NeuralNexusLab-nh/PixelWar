@@ -6,7 +6,6 @@ const path = require('path');
 const bcrypt = require('bcrypt');
 const helmet = require('helmet');
 const cors = require('cors');
-app.set('trust proxy', true);
 
 const app = express();
 const server = http.createServer(app);
@@ -15,6 +14,7 @@ const io = new Server(server, { cors: { origin: "*" } });
 const PORT = process.env.PORT || 3000;
 const DB_FILE = path.join(__dirname, 'db.json');
 
+app.set('trust proxy', true);
 app.use((req, res, next) => {
     console.log("Req from " + req.ip + ", path is " + req.path);
     next();
